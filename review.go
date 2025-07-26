@@ -21,7 +21,7 @@ func cmdReview(limit int) error {
 	}
 
 	if len(uuids) == 0 {
-		fmt.Println("\nThere are no tasks needing review.\n")
+		fmt.Println("\nThere are no tasks needing review.")
 		return nil
 	}
 
@@ -152,14 +152,14 @@ func processAction(action, uuid string, task *Task) (string, error) {
 		if err := markTaskReviewed(uuid); err != nil {
 			return "", err
 		}
-		fmt.Println("Marked as reviewed.\n")
+		fmt.Println("Marked as reviewed.")
 		return "advance_reviewed", nil
 
 	case "edit":
 		if err := editTask(uuid); err != nil {
 			return "", err
 		}
-		fmt.Println("Task updated.\n")
+		fmt.Println("Task updated.")
 		return "advance_reviewed", nil
 
 	case "modify":
@@ -174,14 +174,14 @@ func processAction(action, uuid string, task *Task) (string, error) {
 		if err := modifyTask(uuid, modifications); err != nil {
 			return "", err
 		}
-		fmt.Println("Task modified.\n")
+		fmt.Println("Task modified.")
 		return "repeat", nil
 
 	case "complete":
 		if err := completeTask(uuid); err != nil {
 			return "", err
 		}
-		fmt.Println("Task completed.\n")
+		fmt.Println("Task completed.")
 		return "advance", nil
 
 	case "delete":
@@ -196,7 +196,7 @@ func processAction(action, uuid string, task *Task) (string, error) {
 		if err := deleteTask(uuid); err != nil {
 			return "", err
 		}
-		fmt.Println("Task deleted.\n")
+		fmt.Println("Task deleted.")
 		return "advance", nil
 
 	case "wait":
@@ -215,7 +215,7 @@ func processAction(action, uuid string, task *Task) (string, error) {
 		return "advance", nil
 
 	case "skip":
-		fmt.Println("Task skipped.\n")
+		fmt.Println("Task skipped.")
 		return "skip", nil
 
 	case "quit":

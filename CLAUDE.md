@@ -12,8 +12,26 @@ This project uses Go for building:
 
 ## Testing
 
-- **Run tests**: `go test ./...`
+- **Run tests**: `go test -v` or `go test ./...`
+- **Run specific test**: `go test -v -run TestName`
+- **Run benchmarks**: `go test -bench=.`
 - **Build and test**: `go build -o tasksh && ./tasksh help`
+- **Test with coverage**: `go test -cover`
+
+### Test Structure
+
+The test suite consists of:
+- **tasksh_test.go**: Basic command functionality tests (help, diagnostics, version, error handling)
+- **review_test.go**: Review command and Taskwarrior integration tests  
+- **test_utils.go**: Test utilities and TestTasksh wrapper for isolated testing
+
+### Test Environment
+
+Tests use isolated Taskwarrior environments with temporary directories to avoid interfering with real task data. Some tests require Taskwarrior to be installed and will be skipped if not available.
+
+### Interactive Test Limitations
+
+Some tests involving the interactive review interface may fail in headless environments (like CI) due to TTY requirements. These tests are designed to be skipped or handled gracefully when no TTY is available.
 
 ## Architecture
 
