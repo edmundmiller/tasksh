@@ -122,16 +122,17 @@ func getReviewAction() (string, bool, error) {
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("What would you like to do with this task?").
+				Title("What would you like to do with this task? (Press / to filter)").
 				Options(
-					huh.NewOption("Mark as reviewed", "review"),
-					huh.NewOption("Edit task", "edit"),
-					huh.NewOption("Modify task", "modify"),
-					huh.NewOption("Complete task", "complete"),
-					huh.NewOption("Delete task", "delete"),
-					huh.NewOption("Skip task", "skip"),
-					huh.NewOption("Quit review", "quit"),
+					huh.NewOption("1. Mark as reviewed", "review"),
+					huh.NewOption("2. Edit task", "edit"),
+					huh.NewOption("3. Modify task", "modify"),
+					huh.NewOption("4. Complete task", "complete"),
+					huh.NewOption("5. Delete task", "delete"),
+					huh.NewOption("6. Skip task", "skip"),
+					huh.NewOption("7. Quit review", "quit"),
 				).
+				Filtering(true).
 				Value(&action),
 		),
 	)
