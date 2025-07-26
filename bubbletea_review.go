@@ -164,12 +164,20 @@ func NewReviewModel() *ReviewModel {
 	vp := viewport.New(80, 20)
 	vp.Style = lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
+		BorderForeground(lipgloss.Color("8")).  // ANSI bright black (gray)
 		PaddingRight(2)
 
 	// Create help model
 	h := help.New()
 	h.ShowAll = false
+	
+	// Style the help for better visibility
+	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))   // ANSI cyan for keys
+	h.Styles.ShortDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("7"))  // ANSI white for descriptions
+	h.Styles.ShortSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))  // ANSI bright black for separators
+	h.Styles.FullKey = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))    // ANSI cyan for keys
+	h.Styles.FullDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("7"))   // ANSI white for descriptions
+	h.Styles.FullSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))   // ANSI bright black for separators
 
 	// Create text input
 	ti := textinput.New()
@@ -414,7 +422,7 @@ func (m *ReviewModel) View() string {
 	// Message area
 	if m.message != "" {
 		messageStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("10")).
+			Foreground(lipgloss.Color("2")).  // ANSI green
 			Bold(true).
 			Margin(1, 0)
 		sections = append(sections, messageStyle.Render(m.message))
@@ -439,8 +447,7 @@ func (m *ReviewModel) renderStatusBar() string {
 	}
 
 	statusStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("62")).
-		Foreground(lipgloss.Color("15")).
+		Reverse(true).  // Use terminal's reverse video for better compatibility
 		Padding(0, 1).
 		Width(m.width)
 
@@ -452,7 +459,7 @@ func (m *ReviewModel) renderStatusBar() string {
 func (m *ReviewModel) renderConfirmation() string {
 	confirmStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("196")).
+		BorderForeground(lipgloss.Color("1")).  // ANSI red for delete warning
 		Padding(1, 2).
 		Margin(2, 4)
 
@@ -467,7 +474,7 @@ func (m *ReviewModel) renderConfirmation() string {
 func (m *ReviewModel) renderInput() string {
 	inputStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
+		BorderForeground(lipgloss.Color("4")).  // ANSI blue for input dialogs
 		Padding(1, 2).
 		Margin(2, 4)
 
@@ -490,28 +497,40 @@ func (m *ReviewModel) updateViewport() {
 
 	var content strings.Builder
 	
+	// Use minimal styling - let the terminal handle the colors
+	labelStyle := lipgloss.NewStyle().Bold(true)
+	
 	// Task description
-	content.WriteString(lipgloss.NewStyle().Bold(true).Render("Description:"))
+	content.WriteString(labelStyle.Render("Description:"))
 	content.WriteString("\n")
 	content.WriteString(m.currentTask.Description)
 	content.WriteString("\n\n")
 
 	// Task details
 	if m.currentTask.Project != "" {
-		content.WriteString(fmt.Sprintf("Project: %s\n", m.currentTask.Project))
+		content.WriteString(labelStyle.Render("Project: "))
+		content.WriteString(m.currentTask.Project)
+		content.WriteString("\n")
 	}
 	if m.currentTask.Priority != "" {
-		content.WriteString(fmt.Sprintf("Priority: %s\n", m.currentTask.Priority))
+		content.WriteString(labelStyle.Render("Priority: "))
+		content.WriteString(m.currentTask.Priority)
+		content.WriteString("\n")
 	}
 	if m.currentTask.Status != "" {
-		content.WriteString(fmt.Sprintf("Status: %s\n", m.currentTask.Status))
+		content.WriteString(labelStyle.Render("Status: "))
+		content.WriteString(m.currentTask.Status)
+		content.WriteString("\n")
 	}
 	if m.currentTask.Due != "" {
-		content.WriteString(fmt.Sprintf("Due: %s\n", m.currentTask.Due))
+		content.WriteString(labelStyle.Render("Due: "))
+		content.WriteString(m.currentTask.Due)
+		content.WriteString("\n")
 	}
 
 	content.WriteString("\n")
-	content.WriteString("UUID: " + m.currentTask.UUID)
+	content.WriteString(labelStyle.Render("UUID: "))
+	content.WriteString(m.currentTask.UUID)
 
 	m.viewport.SetContent(content.String())
 }
