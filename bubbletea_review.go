@@ -1,0 +1,616 @@
+package main
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
+
+// ReviewMode represents the current mode of the review interface
+type ReviewMode int
+
+const (
+	ModeViewing ReviewMode = iota
+	ModeConfirmDelete
+	ModeWaiting
+	ModeModifying
+	ModeInputWaitDate
+	ModeInputWaitReason
+	ModeInputModification
+)
+
+// ReviewModel represents the state of the Bubble Tea review interface
+type ReviewModel struct {
+	// Task review state
+	tasks       []string // UUIDs of tasks to review
+	current     int      // Current task index
+	currentTask *Task    // Current task details
+	total       int      // Total tasks to review
+	reviewed    int      // Number reviewed
+
+	// UI components
+	viewport  viewport.Model
+	help      help.Model
+	textInput textinput.Model
+	keys      KeyMap
+
+	// Application state
+	mode     ReviewMode
+	err      error
+	quitting bool
+	width    int
+	height   int
+
+	// For confirmations and input
+	pendingAction string
+	message       string
+	waitDate      string
+	waitReason    string
+}
+
+// KeyMap defines the key bindings for the review interface
+type KeyMap struct {
+	// Navigation
+	NextTask key.Binding
+	PrevTask key.Binding
+	
+	// Actions
+	Review   key.Binding
+	Edit     key.Binding
+	Modify   key.Binding
+	Complete key.Binding
+	Delete   key.Binding
+	Wait     key.Binding
+	Skip     key.Binding
+	
+	// General
+	Help key.Binding
+	Quit key.Binding
+	
+	// Confirmations
+	Confirm key.Binding
+	Cancel  key.Binding
+}
+
+// DefaultKeyMap returns the default key bindings
+func DefaultKeyMap() KeyMap {
+	return KeyMap{
+		// Navigation
+		NextTask: key.NewBinding(
+			key.WithKeys("j", "down"),
+			key.WithHelp("j/↓", "next task"),
+		),
+		PrevTask: key.NewBinding(
+			key.WithKeys("k", "up"),
+			key.WithHelp("k/↑", "previous task"),
+		),
+		
+		// Actions
+		Review: key.NewBinding(
+			key.WithKeys("r"),
+			key.WithHelp("r", "mark reviewed"),
+		),
+		Edit: key.NewBinding(
+			key.WithKeys("e"),
+			key.WithHelp("e", "edit task"),
+		),
+		Modify: key.NewBinding(
+			key.WithKeys("m"),
+			key.WithHelp("m", "modify task"),
+		),
+		Complete: key.NewBinding(
+			key.WithKeys("c"),
+			key.WithHelp("c", "complete task"),
+		),
+		Delete: key.NewBinding(
+			key.WithKeys("d"),
+			key.WithHelp("d", "delete task"),
+		),
+		Wait: key.NewBinding(
+			key.WithKeys("w"),
+			key.WithHelp("w", "wait task"),
+		),
+		Skip: key.NewBinding(
+			key.WithKeys("s"),
+			key.WithHelp("s", "skip task"),
+		),
+		
+		// General
+		Help: key.NewBinding(
+			key.WithKeys("?"),
+			key.WithHelp("?", "toggle help"),
+		),
+		Quit: key.NewBinding(
+			key.WithKeys("q", "ctrl+c"),
+			key.WithHelp("q", "quit"),
+		),
+		
+		// Confirmations
+		Confirm: key.NewBinding(
+			key.WithKeys("y", "enter"),
+			key.WithHelp("y/enter", "confirm"),
+		),
+		Cancel: key.NewBinding(
+			key.WithKeys("n", "esc"),
+			key.WithHelp("n/esc", "cancel"),
+		),
+	}
+}
+
+// ShortHelp returns the short help text
+func (k KeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Review, k.Edit, k.Modify, k.Complete, k.Delete, k.Wait, k.Skip, k.Help, k.Quit}
+}
+
+// FullHelp returns the full help text
+func (k KeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.NextTask, k.PrevTask},
+		{k.Review, k.Edit, k.Modify},
+		{k.Complete, k.Delete, k.Wait, k.Skip},
+		{k.Help, k.Quit},
+	}
+}
+
+// NewReviewModel creates a new review model
+func NewReviewModel() *ReviewModel {
+	// Create viewport
+	vp := viewport.New(80, 20)
+	vp.Style = lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		PaddingRight(2)
+
+	// Create help model
+	h := help.New()
+	h.ShowAll = false
+
+	// Create text input
+	ti := textinput.New()
+	ti.Focus()
+
+	return &ReviewModel{
+		viewport:  vp,
+		help:      h,
+		textInput: ti,
+		keys:      DefaultKeyMap(),
+		mode:      ModeViewing,
+	}
+}
+
+// Init initializes the review model
+func (m *ReviewModel) Init() tea.Cmd {
+	return nil
+}
+
+// Update handles messages and updates the model
+func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	var cmds []tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		
+		// Update viewport dimensions
+		headerHeight := 3 // Status bar
+		footerHeight := 4 // Help text
+		verticalMarginHeight := headerHeight + footerHeight
+		
+		if !m.help.ShowAll {
+			footerHeight = 2
+			verticalMarginHeight = headerHeight + footerHeight
+		}
+		
+		m.viewport.Width = msg.Width - 2
+		m.viewport.Height = msg.Height - verticalMarginHeight
+
+	case tea.KeyMsg:
+		// Handle special input modes
+		switch m.mode {
+		case ModeConfirmDelete:
+			return m.updateConfirmDelete(msg)
+		case ModeInputModification:
+			return m.updateModificationInput(msg)
+		case ModeInputWaitDate:
+			return m.updateWaitDateInput(msg)
+		case ModeInputWaitReason:
+			return m.updateWaitReasonInput(msg)
+		}
+		
+		switch {
+		case key.Matches(msg, m.keys.Quit):
+			m.quitting = true
+			return m, tea.Quit
+
+		case key.Matches(msg, m.keys.Help):
+			m.help.ShowAll = !m.help.ShowAll
+
+		case key.Matches(msg, m.keys.NextTask):
+			if m.current < len(m.tasks)-1 {
+				m.current++
+				return m, m.loadCurrentTask()
+			}
+
+		case key.Matches(msg, m.keys.PrevTask):
+			if m.current > 0 {
+				m.current--
+				return m, m.loadCurrentTask()
+			}
+
+		case key.Matches(msg, m.keys.Review):
+			return m, m.reviewCurrentTask()
+
+		case key.Matches(msg, m.keys.Edit):
+			return m, m.editCurrentTask()
+
+		case key.Matches(msg, m.keys.Complete):
+			return m, m.completeCurrentTask()
+
+		case key.Matches(msg, m.keys.Delete):
+			m.mode = ModeConfirmDelete
+			m.message = "Delete this task? This action cannot be undone."
+
+		case key.Matches(msg, m.keys.Modify):
+			m.mode = ModeInputModification
+			m.textInput.Placeholder = "Enter modification (e.g., +tag, project:new, priority:H)"
+			m.textInput.SetValue("")
+			m.message = "Enter modification:"
+
+		case key.Matches(msg, m.keys.Wait):
+			m.mode = ModeInputWaitDate
+			m.textInput.Placeholder = "Enter wait date (e.g., tomorrow, next week, 2024-12-25)"
+			m.textInput.SetValue("")
+			m.message = "Enter wait date:"
+
+		case key.Matches(msg, m.keys.Skip):
+			return m, m.skipCurrentTask()
+		}
+
+	case taskLoadedMsg:
+		m.currentTask = msg.task
+		m.updateViewport()
+
+	case actionCompletedMsg:
+		m.message = msg.message
+		m.reviewed++
+		
+		// Move to next task if not at the end
+		if m.current < len(m.tasks)-1 {
+			m.current++
+			return m, m.loadCurrentTask()
+		} else {
+			// Review complete
+			m.message = fmt.Sprintf("Review complete! %d of %d tasks reviewed.", m.reviewed, m.total)
+		}
+
+	case errorMsg:
+		m.err = msg.error
+		m.message = fmt.Sprintf("Error: %v", msg.error)
+	}
+
+	// Update components based on mode
+	if m.mode == ModeInputModification || m.mode == ModeInputWaitDate || m.mode == ModeInputWaitReason {
+		m.textInput, cmd = m.textInput.Update(msg)
+		cmds = append(cmds, cmd)
+	} else {
+		m.viewport, cmd = m.viewport.Update(msg)
+		cmds = append(cmds, cmd)
+	}
+
+	return m, tea.Batch(cmds...)
+}
+
+// updateConfirmDelete handles delete confirmation
+func (m *ReviewModel) updateConfirmDelete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Confirm):
+		m.mode = ModeViewing
+		m.message = ""
+		return m, m.deleteCurrentTask()
+
+	case key.Matches(msg, m.keys.Cancel):
+		m.mode = ModeViewing
+		m.message = ""
+	}
+	
+	return m, nil
+}
+
+// updateModificationInput handles modification input
+func (m *ReviewModel) updateModificationInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		modification := strings.TrimSpace(m.textInput.Value())
+		if modification == "" {
+			m.mode = ModeViewing
+			m.message = ""
+			return m, nil
+		}
+		m.mode = ModeViewing
+		m.message = ""
+		return m, m.modifyCurrentTask(modification)
+		
+	case tea.KeyEscape:
+		m.mode = ModeViewing
+		m.message = ""
+		return m, nil
+	}
+	
+	return m, nil
+}
+
+// updateWaitDateInput handles wait date input
+func (m *ReviewModel) updateWaitDateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		waitDate := strings.TrimSpace(m.textInput.Value())
+		if waitDate == "" {
+			m.mode = ModeViewing
+			m.message = ""
+			return m, nil
+		}
+		m.waitDate = waitDate
+		m.mode = ModeInputWaitReason
+		m.textInput.Placeholder = "Enter wait reason (optional)"
+		m.textInput.SetValue("")
+		m.message = "Enter wait reason (optional):"
+		
+	case tea.KeyEscape:
+		m.mode = ModeViewing
+		m.message = ""
+		return m, nil
+	}
+	
+	return m, nil
+}
+
+// updateWaitReasonInput handles wait reason input
+func (m *ReviewModel) updateWaitReasonInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		waitReason := strings.TrimSpace(m.textInput.Value())
+		m.mode = ModeViewing
+		m.message = ""
+		return m, m.waitCurrentTask(m.waitDate, waitReason)
+		
+	case tea.KeyEscape:
+		m.mode = ModeViewing
+		m.message = ""
+		return m, nil
+	}
+	
+	return m, nil
+}
+
+// View renders the review interface
+func (m *ReviewModel) View() string {
+	if m.quitting {
+		return fmt.Sprintf("\nEnd of review. %d out of %d tasks reviewed.\n\n", m.reviewed, m.total)
+	}
+
+	var sections []string
+
+	// Status bar
+	statusBar := m.renderStatusBar()
+	sections = append(sections, statusBar)
+
+	// Main content area
+	if m.mode == ModeConfirmDelete {
+		sections = append(sections, m.renderConfirmation())
+	} else if m.mode == ModeInputModification || m.mode == ModeInputWaitDate || m.mode == ModeInputWaitReason {
+		sections = append(sections, m.renderInput())
+	} else {
+		sections = append(sections, m.viewport.View())
+	}
+
+	// Message area
+	if m.message != "" {
+		messageStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("10")).
+			Bold(true).
+			Margin(1, 0)
+		sections = append(sections, messageStyle.Render(m.message))
+	}
+
+	// Help
+	sections = append(sections, m.help.View(m.keys))
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+// renderStatusBar renders the top status bar
+func (m *ReviewModel) renderStatusBar() string {
+	progress := fmt.Sprintf("[%d of %d]", m.current+1, m.total)
+	
+	var taskTitle string
+	if m.currentTask != nil {
+		taskTitle = m.currentTask.Description
+		if len(taskTitle) > 60 {
+			taskTitle = taskTitle[:57] + "..."
+		}
+	}
+
+	statusStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("62")).
+		Foreground(lipgloss.Color("15")).
+		Padding(0, 1).
+		Width(m.width)
+
+	left := progress + " " + taskTitle
+	return statusStyle.Render(left)
+}
+
+// renderConfirmation renders delete confirmation dialog
+func (m *ReviewModel) renderConfirmation() string {
+	confirmStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("196")).
+		Padding(1, 2).
+		Margin(2, 4)
+
+	content := fmt.Sprintf("%s\n\n%s", 
+		m.message,
+		"Press 'y' to confirm, 'n' to cancel")
+
+	return confirmStyle.Render(content)
+}
+
+// renderInput renders input dialog
+func (m *ReviewModel) renderInput() string {
+	inputStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2).
+		Margin(2, 4)
+
+	if m.message != "" {
+		content := fmt.Sprintf("%s\n\n%s\n\nPress ESC to cancel", 
+			m.message,
+			m.textInput.View())
+		return inputStyle.Render(content)
+	}
+
+	return inputStyle.Render(m.textInput.View())
+}
+
+// updateViewport updates the viewport content with current task info
+func (m *ReviewModel) updateViewport() {
+	if m.currentTask == nil {
+		m.viewport.SetContent("Loading task...")
+		return
+	}
+
+	var content strings.Builder
+	
+	// Task description
+	content.WriteString(lipgloss.NewStyle().Bold(true).Render("Description:"))
+	content.WriteString("\n")
+	content.WriteString(m.currentTask.Description)
+	content.WriteString("\n\n")
+
+	// Task details
+	if m.currentTask.Project != "" {
+		content.WriteString(fmt.Sprintf("Project: %s\n", m.currentTask.Project))
+	}
+	if m.currentTask.Priority != "" {
+		content.WriteString(fmt.Sprintf("Priority: %s\n", m.currentTask.Priority))
+	}
+	if m.currentTask.Status != "" {
+		content.WriteString(fmt.Sprintf("Status: %s\n", m.currentTask.Status))
+	}
+	if m.currentTask.Due != "" {
+		content.WriteString(fmt.Sprintf("Due: %s\n", m.currentTask.Due))
+	}
+
+	content.WriteString("\n")
+	content.WriteString("UUID: " + m.currentTask.UUID)
+
+	m.viewport.SetContent(content.String())
+}
+
+// Command messages
+type taskLoadedMsg struct {
+	task *Task
+}
+
+type actionCompletedMsg struct {
+	message string
+}
+
+type errorMsg struct {
+	error error
+}
+
+// Commands for async operations
+func (m *ReviewModel) loadCurrentTask() tea.Cmd {
+	return func() tea.Msg {
+		if m.current >= len(m.tasks) {
+			return errorMsg{fmt.Errorf("task index out of range")}
+		}
+		
+		task, err := getTaskInfo(m.tasks[m.current])
+		if err != nil {
+			return errorMsg{err}
+		}
+		
+		return taskLoadedMsg{task: task}
+	}
+}
+
+func (m *ReviewModel) reviewCurrentTask() tea.Cmd {
+	return func() tea.Msg {
+		if err := markTaskReviewed(m.tasks[m.current]); err != nil {
+			return errorMsg{err}
+		}
+		return actionCompletedMsg{message: "Marked as reviewed."}
+	}
+}
+
+func (m *ReviewModel) editCurrentTask() tea.Cmd {
+	return func() tea.Msg {
+		if err := editTask(m.tasks[m.current]); err != nil {
+			return errorMsg{err}
+		}
+		return actionCompletedMsg{message: "Task updated."}
+	}
+}
+
+func (m *ReviewModel) completeCurrentTask() tea.Cmd {
+	return func() tea.Msg {
+		if err := completeTask(m.tasks[m.current]); err != nil {
+			return errorMsg{err}
+		}
+		return actionCompletedMsg{message: "Task completed."}
+	}
+}
+
+func (m *ReviewModel) deleteCurrentTask() tea.Cmd {
+	return func() tea.Msg {
+		if err := deleteTask(m.tasks[m.current]); err != nil {
+			return errorMsg{err}
+		}
+		return actionCompletedMsg{message: "Task deleted."}
+	}
+}
+
+func (m *ReviewModel) skipCurrentTask() tea.Cmd {
+	return func() tea.Msg {
+		// Just move to next task without marking as reviewed
+		return actionCompletedMsg{message: "Task skipped."}
+	}
+}
+
+func (m *ReviewModel) modifyCurrentTask(modification string) tea.Cmd {
+	return func() tea.Msg {
+		if err := modifyTask(m.tasks[m.current], modification); err != nil {
+			return errorMsg{err}
+		}
+		return actionCompletedMsg{message: "Task modified."}
+	}
+}
+
+func (m *ReviewModel) waitCurrentTask(waitDate, reason string) tea.Cmd {
+	return func() tea.Msg {
+		if err := waitTask(m.tasks[m.current], waitDate, reason); err != nil {
+			return errorMsg{err}
+		}
+		message := fmt.Sprintf("Task set to wait until %s.", waitDate)
+		return actionCompletedMsg{message: message}
+	}
+}
+
+// SetTasks initializes the review session with tasks
+func (m *ReviewModel) SetTasks(tasks []string, total int) {
+	m.tasks = tasks
+	m.total = total
+	m.current = 0
+	m.reviewed = 0
+}
