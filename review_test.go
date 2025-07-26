@@ -144,6 +144,7 @@ func TestHelpOutput(t *testing.T) {
 		"Skip task",
 		"Mark as reviewed",
 		"Quit review session",
+		"AI Analysis", // New AI feature
 	}
 
 	for _, content := range expectedContent {
@@ -167,6 +168,8 @@ func TestDiagnosticsOutput(t *testing.T) {
 		"Version: 2.0.0-go",
 		"Built with: Go",
 		"Taskwarrior:",
+		"Mods (AI):", // New AI diagnostics
+		"Time Database:", // New time tracking diagnostics
 	}
 
 	for _, content := range expectedContent {
@@ -263,4 +266,59 @@ func BenchmarkCommandParsing(b *testing.B) {
 		cmd := commands[i%len(commands)]
 		tasksh.Run(cmd...)
 	}
+}
+
+// AI-related tests (from the original AI commit)
+
+// TestModificationOption tests the ModificationOption struct
+func TestModificationOption(t *testing.T) {
+	// Test that ModificationOption struct works as expected
+	opt := ModificationOption{
+		Name:        "Set priority",
+		Value:       "priority:H",
+		Description: "Increase priority due to deadline",
+	}
+
+	if opt.Name != "Set priority" {
+		t.Errorf("Expected Name 'Set priority', got %s", opt.Name)
+	}
+
+	if opt.Value != "priority:H" {
+		t.Errorf("Expected Value 'priority:H', got %s", opt.Value)
+	}
+
+	if opt.Description != "Increase priority due to deadline" {
+		t.Errorf("Expected Description 'Increase priority due to deadline', got %s", opt.Description)
+	}
+}
+
+// TestTaskStruct tests the Task struct
+func TestTaskStruct(t *testing.T) {
+	task := &Task{
+		UUID:        "test-uuid",
+		Description: "Test task",
+		Project:     "test-project",
+		Priority:    "M",
+		Status:      "pending",
+		Due:         "tomorrow",
+	}
+
+	if task.UUID != "test-uuid" {
+		t.Errorf("Expected UUID 'test-uuid', got %s", task.UUID)
+	}
+
+	if task.Description != "Test task" {
+		t.Errorf("Expected Description 'Test task', got %s", task.Description)
+	}
+}
+
+// TestReviewWorkflow is a placeholder for integration testing
+func TestReviewWorkflow(t *testing.T) {
+	t.Skip("Integration test - requires taskwarrior mock")
+	
+	// This would test the full review workflow including:
+	// - Getting tasks for review
+	// - Processing AI analysis
+	// - Applying suggestions
+	// - Recording completion times
 }

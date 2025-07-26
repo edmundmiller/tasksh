@@ -54,7 +54,8 @@ func cmdHelp() {
 	fmt.Println("During review, you can:")
 	fmt.Println("  - Edit task (opens task editor)")
 	fmt.Println("  - Modify task (with smart completion for projects/tags/priorities)")
-	fmt.Println("  - Complete task")
+	fmt.Println("  - AI Analysis (get AI suggestions for improvements)")
+	fmt.Println("  - Complete task (with optional time tracking)")
 	fmt.Println("  - Delete task")
 	fmt.Println("  - Wait task (set waiting status with date and reason)")
 	fmt.Println("  - Skip task (will need review again later)")
@@ -74,5 +75,21 @@ func cmdDiagnostics() {
 		fmt.Printf("Taskwarrior: NOT FOUND - %v\n", err)
 	} else {
 		fmt.Println("Taskwarrior: Available")
+	}
+	
+	// Check if mods command is available
+	if err := checkModsAvailable(); err != nil {
+		fmt.Printf("Mods (AI): NOT FOUND - %v\n", err)
+		fmt.Println("  Install mods for AI-assisted task analysis: https://github.com/charmbracelet/mods")
+	} else {
+		fmt.Println("Mods (AI): Available")
+	}
+	
+	// Check time database
+	if timeDB, err := NewTimeDB(); err != nil {
+		fmt.Printf("Time Database: ERROR - %v\n", err)
+	} else {
+		timeDB.Close()
+		fmt.Println("Time Database: Available")
 	}
 }
