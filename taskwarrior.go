@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -125,9 +126,9 @@ func showTaskInfo(uuid string) error {
 // editTask opens the task for editing
 func editTask(uuid string) error {
 	cmd := exec.Command("task", "rc.confirmation:no", "rc.verbose:nothing", uuid, "edit")
-	cmd.Stdin = nil
-	cmd.Stdout = nil
-	cmd.Stderr = nil
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to edit task: %w", err)
 	}
@@ -169,4 +170,109 @@ func markTaskReviewed(uuid string) error {
 		return fmt.Errorf("failed to mark task as reviewed: %w", err)
 	}
 	return nil
+}
+
+// getProjects returns a list of existing projects
+func getProjects() ([]string, error) {
+	output, err := executeTask("rc.verbose:nothing", "_projects")
+	if err != nil {
+		return []string{}, nil // Return empty list if no projects
+	}
+	
+	if output == "" {
+		return []string{}, nil
+	}
+	
+	projects := strings.Split(output, "\n")
+	// Filter out empty strings
+	var filtered []string
+	for _, project := range projects {
+		if strings.TrimSpace(project) != "" {
+			filtered = append(filtered, strings.TrimSpace(project))
+		}
+	}
+	return filtered, nil
+}
+
+// getTags returns a list of existing tags
+func getTags() ([]string, error) {
+	output, err := executeTask("rc.verbose:nothing", "_tags")
+	if err != nil {
+		return []string{}, nil // Return empty list if no tags
+	}
+	
+	if output == "" {
+		return []string{}, nil
+	}
+	
+	tags := strings.Split(output, "\n")
+	// Filter out empty strings and add + prefix for suggestions
+	var filtered []string
+	for _, tag := range tags {
+		if strings.TrimSpace(tag) != "" {
+			filtered = append(filtered, "+"+strings.TrimSpace(tag))
+		}
+	}
+	return filtered, nil
+}
+
+// getPriorities returns available priority levels
+func getPriorities() []string {
+	return []string{"priority:H", "priority:M", "priority:L", "priority:"}
+}
+
+// getCommonModifications returns common modification patterns
+func getCommonModifications() []string {
+	return []string{
+		"due:tomorrow",
+		"due:next week", 
+		"due:next month",
+		"due:",
+		"wait:tomorrow",
+		"wait:next week",
+		"wait:",
+		"scheduled:tomorrow",
+		"scheduled:next week",
+		"scheduled:",
+		"depends:",
+	}
+}
+
+// waitTask sets a task to waiting status with specified date and optional reason
+func waitTask(uuid, waitUntil, reason string) error {
+	args := []string{"rc.confirmation:no", "rc.verbose:nothing", uuid, "modify", "wait:" + waitUntil}
+	
+	// Add reason as annotation if provided
+	if reason != "" {
+		args = append(args, "+waiting")
+		// Add annotation with reason
+		if _, err := executeTask("rc.confirmation:no", "rc.verbose:nothing", uuid, "annotate", "Wait reason: "+reason); err != nil {
+			// Don't fail if annotation fails, just log
+			fmt.Printf("Warning: Could not add wait reason annotation: %v\n", err)
+		}
+	} else {
+		args = append(args, "+waiting")
+	}
+	
+	if _, err := executeTask(args...); err != nil {
+		return fmt.Errorf("failed to set task to waiting: %w", err)
+	}
+	return nil
+}
+
+// getWaitPeriods returns common wait periods for autocompletion
+func getWaitPeriods() []string {
+	return []string{
+		"tomorrow",
+		"next week",
+		"next month",
+		"1week",
+		"2weeks", 
+		"1month",
+		"3months",
+		"monday",
+		"friday",
+		"january",
+		"next year",
+	}
 }

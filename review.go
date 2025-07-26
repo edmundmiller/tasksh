@@ -129,8 +129,9 @@ func getReviewAction() (string, bool, error) {
 					huh.NewOption("3. Modify task", "modify"),
 					huh.NewOption("4. Complete task", "complete"),
 					huh.NewOption("5. Delete task", "delete"),
-					huh.NewOption("6. Skip task", "skip"),
-					huh.NewOption("7. Quit review", "quit"),
+					huh.NewOption("6. Wait task", "wait"),
+					huh.NewOption("7. Skip task", "skip"),
+					huh.NewOption("8. Quit review", "quit"),
 				).
 				Filtering(true).
 				Value(&action),
@@ -199,6 +200,21 @@ func processAction(action, uuid string, task *Task) (string, error) {
 		fmt.Println("Task deleted.\n")
 		return "advance", nil
 
+	case "wait":
+		waitUntil, reason, err := getWaitDetails()
+		if err != nil {
+			return "", err
+		}
+		if waitUntil == "" {
+			return "repeat", nil
+		}
+		
+		if err := waitTask(uuid, waitUntil, reason); err != nil {
+			return "", err
+		}
+		fmt.Printf("Task set to wait until %s.\n", waitUntil)
+		return "advance", nil
+
 	case "skip":
 		fmt.Println("Task skipped.\n")
 		return "skip", nil
@@ -211,8 +227,148 @@ func processAction(action, uuid string, task *Task) (string, error) {
 	}
 }
 
-// getModifications prompts for task modifications
+// ModificationOption represents a suggestion for task modification
+type ModificationOption struct {
+	Name        string
+	Value       string
+	Description string
+}
+
+// getModifications prompts for task modifications with completion suggestions
 func getModifications() (string, error) {
+	// Gather completion data
+	projects, _ := getProjects()
+	tags, _ := getTags()
+	priorities := getPriorities()
+	common := getCommonModifications()
+	
+	// Build suggestion options
+	var suggestions []ModificationOption
+	
+	// Add common modifications
+	for _, mod := range common {
+		suggestions = append(suggestions, ModificationOption{
+			Name:        mod,
+			Value:       mod,
+			Description: "Common modification",
+		})
+	}
+	
+	// Add projects
+	for _, project := range projects {
+		suggestions = append(suggestions, ModificationOption{
+			Name:        "project:" + project,
+			Value:       "project:" + project,
+			Description: "Set project",
+		})
+	}
+	
+	// Add tags
+	for _, tag := range tags {
+		suggestions = append(suggestions, ModificationOption{
+			Name:        tag,
+			Value:       tag,
+			Description: "Add tag",
+		})
+		// Also add removal option
+		if strings.HasPrefix(tag, "+") {
+			removeTag := "-" + tag[1:]
+			suggestions = append(suggestions, ModificationOption{
+				Name:        removeTag,
+				Value:       removeTag,
+				Description: "Remove tag",
+			})
+		}
+	}
+	
+	// Add priorities
+	for _, priority := range priorities {
+		desc := "Set priority"
+		if priority == "priority:" {
+			desc = "Clear priority"
+		}
+		suggestions = append(suggestions, ModificationOption{
+			Name:        priority,
+			Value:       priority,
+			Description: desc,
+		})
+	}
+	
+	var choice string
+	var useCustom bool
+	
+	// First, ask if they want to use suggestions or enter custom
+	form1 := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[bool]().
+				Title("How would you like to modify this task?").
+				Options(
+					huh.NewOption("Choose from suggestions", false),
+					huh.NewOption("Enter custom modification", true),
+				).
+				Value(&useCustom),
+		),
+	)
+	
+	if err := form1.Run(); err != nil {
+		return "", err
+	}
+	
+	if useCustom {
+		// Use custom input
+		var modifications string
+		form := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Enter modification arguments").
+					Description("Examples: +tag -tag /old/new/ project:newproject priority:H").
+					Placeholder("Enter modifications...").
+					Value(&modifications),
+			),
+		)
+		
+		err := form.Run()
+		if err != nil {
+			return "", err
+		}
+		
+		return strings.TrimSpace(modifications), nil
+	} else {
+		// Use suggestions
+		if len(suggestions) == 0 {
+			return getModificationsCustom()
+		}
+		
+		// Build Huh options from suggestions
+		var options []huh.Option[string]
+		for _, suggestion := range suggestions {
+			options = append(options, huh.NewOption(
+				fmt.Sprintf("%s - %s", suggestion.Name, suggestion.Description),
+				suggestion.Value,
+			))
+		}
+		
+		form := huh.NewForm(
+			huh.NewGroup(
+				huh.NewSelect[string]().
+					Title("Select a modification:").
+					Options(options...).
+					Filtering(true).
+					Value(&choice),
+			),
+		)
+		
+		err := form.Run()
+		if err != nil {
+			return "", err
+		}
+		
+		return choice, nil
+	}
+}
+
+// getModificationsCustom is a fallback for custom input
+func getModificationsCustom() (string, error) {
 	var modifications string
 
 	form := huh.NewForm(
@@ -231,6 +387,86 @@ func getModifications() (string, error) {
 	}
 
 	return strings.TrimSpace(modifications), nil
+}
+
+// getWaitDetails prompts for wait date and optional reason
+func getWaitDetails() (string, string, error) {
+	waitPeriods := getWaitPeriods()
+	
+	var useCustomDate bool
+	var waitUntil string
+	var reason string
+	
+	// First, ask if they want to use common periods or custom date
+	form1 := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[bool]().
+				Title("How would you like to specify the wait period?").
+				Options(
+					huh.NewOption("Choose from common periods", false),
+					huh.NewOption("Enter custom date", true),
+				).
+				Value(&useCustomDate),
+		),
+	)
+	
+	if err := form1.Run(); err != nil {
+		return "", "", err
+	}
+	
+	if useCustomDate {
+		// Custom date input
+		form2 := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Enter wait until date").
+					Description("Examples: tomorrow, next week, 2024-12-25, monday").
+					Placeholder("Enter date...").
+					Value(&waitUntil),
+			),
+		)
+		
+		if err := form2.Run(); err != nil {
+			return "", "", err
+		}
+	} else {
+		// Choose from common periods
+		var options []huh.Option[string]
+		for _, period := range waitPeriods {
+			options = append(options, huh.NewOption(period, period))
+		}
+		
+		form2 := huh.NewForm(
+			huh.NewGroup(
+				huh.NewSelect[string]().
+					Title("Select wait period:").
+					Options(options...).
+					Filtering(true).
+					Value(&waitUntil),
+			),
+		)
+		
+		if err := form2.Run(); err != nil {
+			return "", "", err
+		}
+	}
+	
+	// Optional reason
+	form3 := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Wait reason (optional)").
+				Description("Briefly describe why this task is waiting").
+				Placeholder("Enter reason...").
+				Value(&reason),
+		),
+	)
+	
+	if err := form3.Run(); err != nil {
+		return "", "", err
+	}
+	
+	return strings.TrimSpace(waitUntil), strings.TrimSpace(reason), nil
 }
 
 // confirmDelete asks for confirmation before deleting a task
