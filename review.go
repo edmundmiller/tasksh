@@ -122,7 +122,7 @@ func getReviewAction() (string, bool, error) {
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("What would you like to do with this task? (Press / to filter)").
+				Title("What would you like to do with this task?").
 				Options(
 					huh.NewOption("1. Mark as reviewed", "review"),
 					huh.NewOption("2. Edit task", "edit"),
@@ -133,7 +133,6 @@ func getReviewAction() (string, bool, error) {
 					huh.NewOption("7. Skip task", "skip"),
 					huh.NewOption("8. Quit review", "quit"),
 				).
-				Filtering(true).
 				Value(&action),
 		),
 	)
@@ -353,7 +352,6 @@ func getModifications() (string, error) {
 				huh.NewSelect[string]().
 					Title("Select a modification:").
 					Options(options...).
-					Filtering(true).
 					Value(&choice),
 			),
 		)
@@ -441,7 +439,6 @@ func getWaitDetails() (string, string, error) {
 				huh.NewSelect[string]().
 					Title("Select wait period:").
 					Options(options...).
-					Filtering(true).
 					Value(&waitUntil),
 			),
 		)
