@@ -2,64 +2,100 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project Overview
+
+Tasksh is a modern Go application providing an interactive task review interface for Taskwarrior. It features AI-powered analysis, time tracking, and a clean modular architecture.
+
 ## Build System
 
-This project uses Go for building:
+This project uses Go with a standard project layout:
 
-- **Build**: `go build -o tasksh`
-- **Install**: `go install` or copy binary to desired location
-- **Dependencies**: Managed automatically with `go mod`
-
-## Testing
-
-- **Run tests**: `go test -v` or `go test ./...`
-- **Run specific test**: `go test -v -run TestName`
-- **Run benchmarks**: `go test -bench=.`
-- **Build and test**: `go build -o tasksh && ./tasksh help`
-- **Test with coverage**: `go test -cover`
-
-### Test Structure
-
-The test suite consists of:
-- **tasksh_test.go**: Basic command functionality tests (help, diagnostics, version, error handling)
-- **review_test.go**: Review command and Taskwarrior integration tests  
-- **test_utils.go**: Test utilities and TestTasksh wrapper for isolated testing
-
-### Test Environment
-
-Tests use isolated Taskwarrior environments with temporary directories to avoid interfering with real task data. Some tests require Taskwarrior to be installed and will be skipped if not available.
-
-### Interactive Test Limitations
-
-Some tests involving the interactive review interface may fail in headless environments (like CI) due to TTY requirements. These tests are designed to be skipped or handled gracefully when no TTY is available.
-
-## Architecture
-
-Tasksh is a task review interface for Taskwarrior written in Go using the Huh library for interactive forms. Key components:
-
-- **main.go**: Entry point and command parsing (supports `help`, `diagnostics`, `review` commands)
-- **taskwarrior.go**: Taskwarrior integration functions that execute task commands and parse results
-- **review.go**: Interactive task review functionality using Huh forms and prompts
-
-The application provides a modern terminal interface for reviewing Taskwarrior tasks with options to edit, modify, complete, delete, skip, or mark tasks as reviewed.
-
-## Dependencies
-
-- **Go**: Programming language and build system
-- **github.com/charmbracelet/huh**: Interactive forms and prompts library for terminal interfaces
-- **Taskwarrior**: External dependency - the `task` command must be available in PATH
-
-## Key Features
-
-- **Interactive forms**: Uses Huh library for modern terminal interface
-- **Task review workflow**: Systematic review of tasks needing attention
-- **UDA management**: Automatically configures `reviewed` UDA and `_reviewed` report
-- **Progress tracking**: Shows current position in review process
-- **Flexible actions**: Edit, modify, complete, delete, skip, or mark as reviewed
-- **Error handling**: Graceful handling of Taskwarrior command failures
+- **Build**: `go build -o tasksh ./cmd/tasksh`
+- **Install**: `go install github.com/emiller/tasksh/cmd/tasksh@latest`
+- **Dependencies**: Managed with `go mod`
+- **Main entry point**: `cmd/tasksh/main.go`
 
 ## Project Structure
 
-- Root directory contains all Go source files
-- `go.mod` and `go.sum` manage dependencies
-- Single binary executable `tasksh`
+```
+cmd/tasksh/           # Application entry point
+internal/
+├── cli/             # Command-line interface handlers
+├── review/          # Task review functionality  
+├── ai/              # AI integration
+├── taskwarrior/     # Taskwarrior integration
+└── timedb/          # Time tracking database
+testdata/            # Test utilities
+docs/                # Documentation
+.claude/             # Claude Code hooks
+```
+
+## Testing
+
+- **Run all tests**: `go test ./...`
+- **Test with coverage**: `go test -cover ./...`
+- **Test specific package**: `go test ./internal/review`
+- **Build and test**: `go build -o tasksh ./cmd/tasksh && ./tasksh help`
+
+### Test Structure
+
+- **internal/cli/tasksh_test.go**: CLI command tests
+- **internal/review/review_test.go**: Review workflow tests
+- **internal/ai/ai_test.go**: AI analysis tests
+- **internal/timedb/timedb_test.go**: Database operation tests
+- **testdata/test_utils.go**: Shared test utilities
+
+Tests use isolated environments and skip integration tests when dependencies (like Taskwarrior) are unavailable.
+
+## Architecture
+
+Modern Go application with clean separation of concerns:
+
+- **cmd/tasksh**: Entry point, minimal logic
+- **internal/cli**: Command handlers (help, diagnostics)
+- **internal/review**: Core review functionality with Bubble Tea UI
+- **internal/taskwarrior**: Taskwarrior command abstraction
+- **internal/ai**: AI-powered task analysis using mods
+- **internal/timedb**: SQLite-based time tracking
+
+## Dependencies
+
+- **Go 1.24.5+**: Programming language
+- **github.com/charmbracelet/huh**: Interactive forms
+- **github.com/charmbracelet/bubbletea**: Terminal UI framework
+- **github.com/mattn/go-sqlite3**: SQLite database driver
+- **Taskwarrior**: External dependency (`task` command)
+- **mods**: Optional, for AI features
+
+## Key Features
+
+- **Modular Architecture**: Clean package separation following Go conventions
+- **Interactive UI**: Modern Bubble Tea interface with keyboard shortcuts
+- **AI Integration**: Intelligent task suggestions via mods
+- **Time Tracking**: Built-in SQLite database for completion analytics
+- **Test Coverage**: Comprehensive test suite with isolated environments
+- **Documentation**: Detailed architecture and API documentation
+
+## Development Guidelines
+
+1. **Package Organization**: Follow the established internal package structure
+2. **Error Handling**: Use standard Go patterns with context wrapping
+3. **Testing**: Write tests for all new functionality
+4. **Dependencies**: Minimize external dependencies, prefer standard library
+5. **Documentation**: Update docs for architectural changes
+
+## Common Commands
+
+```bash
+# Development workflow
+go build -o tasksh ./cmd/tasksh
+go test ./...
+./tasksh diagnostics
+
+# Package-specific testing
+go test ./internal/review -v
+go test ./internal/ai -cover
+
+# Full build verification
+go build -o tasksh ./cmd/tasksh && ./tasksh help
+```
