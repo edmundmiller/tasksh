@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -35,6 +36,7 @@ const (
 	ModeCelebrating
 	ModeContextSelect
 	ModeAIAnalysis
+	ModeAILoading
 )
 
 // ReviewModel represents the state of the Bubble Tea review interface
@@ -81,8 +83,9 @@ type ReviewModel struct {
 	currentContext    string
 	
 	// AI analysis state
-	aiAnalyzer   *ai.Analyzer
+	aiAnalyzer      *ai.Analyzer
 	currentAnalysis *ai.TaskAnalysis
+	aiSpinner       spinner.Model
 }
 
 // KeyMap defines the key bindings for the review interface
@@ -257,6 +260,11 @@ func NewReviewModel() *ReviewModel {
 		// For now, we'll leave it open during the review session
 	}
 
+	// Create AI loading spinner
+	aiSpinner := spinner.New()
+	aiSpinner.Spinner = spinner.Dot
+	aiSpinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("5")) // Magenta for AI
+
 	model := &ReviewModel{
 		viewport:   vp,
 		help:       h,
@@ -267,6 +275,7 @@ func NewReviewModel() *ReviewModel {
 		keys:       DefaultKeyMap(),
 		mode:       ModeViewing,
 		aiAnalyzer: aiAnalyzer,
+		aiSpinner:  aiSpinner,
 	}
 
 	// Initialize current context
@@ -332,6 +341,8 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateContextSelect(msg)
 		case ModeAIAnalysis:
 			return m.updateAIAnalysis(msg)
+		case ModeAILoading:
+			return m.updateAILoading(msg)
 		}
 		
 		switch {
@@ -396,7 +407,13 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			
 		case key.Matches(msg, m.keys.AIAnalysis):
 			if m.aiAnalyzer != nil {
-				return m, m.analyzeCurrentTask()
+				m.mode = ModeAILoading
+				m.message = "Analyzing task with AI..."
+				// Start the spinner with a tick command
+				tickCmd := func() tea.Msg {
+					return m.aiSpinner.Tick()
+				}
+				return m, tea.Batch(tickCmd, m.analyzeCurrentTask())
 			} else {
 				m.message = "AI analysis not available (OpenAI API key or timedb unavailable)"
 			}
@@ -495,6 +512,9 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 	} else if m.mode == ModeCelebrating {
 		m.confetti, cmd = m.confetti.Update(msg)
+		cmds = append(cmds, cmd)
+	} else if m.mode == ModeAILoading {
+		m.aiSpinner, cmd = m.aiSpinner.Update(msg)
 		cmds = append(cmds, cmd)
 	} else {
 		m.viewport, cmd = m.viewport.Update(msg)
@@ -771,6 +791,8 @@ func (m *ReviewModel) View() string {
 		sections = append(sections, m.renderContextSelect())
 	} else if m.mode == ModeAIAnalysis {
 		sections = append(sections, m.renderAIAnalysis())
+	} else if m.mode == ModeAILoading {
+		sections = append(sections, m.renderAILoading())
 	} else if m.mode == ModeCelebrating {
 		sections = append(sections, m.confetti.View())
 	} else {
@@ -1319,4 +1341,62 @@ func getTypeStyle(suggestionType string) lipgloss.Style {
 	default:
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("7")) // White
 	}
+}
+
+// updateAILoading handles input in AI loading mode
+func (m *ReviewModel) updateAILoading(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Cancel):
+		// Allow canceling the loading
+		m.mode = ModeViewing
+		m.message = "AI analysis cancelled"
+		return m, nil
+		
+	case key.Matches(msg, m.keys.Quit):
+		m.quitting = true
+		return m, tea.Quit
+	}
+	
+	return m, nil
+}
+
+// renderAILoading renders the AI loading view
+func (m *ReviewModel) renderAILoading() string {
+	loadingStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("5")). // ANSI magenta for AI
+		Padding(2, 4).
+		Margin(2, 4).
+		Align(lipgloss.Center)
+
+	var content strings.Builder
+	
+	// Spinner and loading message
+	content.WriteString(m.aiSpinner.View())
+	content.WriteString(" ")
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(lipgloss.Color("5")).
+		Bold(true).
+		Render("Analyzing task with AI..."))
+	content.WriteString("\n\n")
+	
+	// Current task info for context
+	if m.currentTask != nil {
+		content.WriteString(lipgloss.NewStyle().
+			Foreground(lipgloss.Color("8")).
+			Render("Task: "))
+		content.WriteString(m.currentTask.Description)
+		content.WriteString("\n")
+	}
+	
+	content.WriteString("\n")
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8")).
+		Render("This may take a few seconds..."))
+	content.WriteString("\n\n")
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8")).
+		Render("Press ESC to cancel"))
+	
+	return loadingStyle.Render(content.String())
 }
