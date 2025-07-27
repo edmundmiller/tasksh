@@ -20,6 +20,7 @@ func ShowHelp() {
 	fmt.Println("  - Complete task (with optional time tracking)")
 	fmt.Println("  - Delete task")
 	fmt.Println("  - Wait task (set waiting status with date and reason)")
+	fmt.Println("  - Due date (set or modify task due date)")
 	fmt.Println("  - Skip task (will need review again later)")
 	fmt.Println("  - Mark as reviewed")
 	fmt.Println("  - Quit review session")

@@ -374,3 +374,75 @@ func TestCalendarKeyBindings(t *testing.T) {
 		t.Error("Right key should have help text")
 	}
 }
+
+// TestDueDateWorkflow tests the complete due date selection workflow
+func TestDueDateWorkflow(t *testing.T) {
+	model := NewReviewModel()
+	model.tasks = []string{"test-uuid"}
+	model.current = 0
+	
+	// Test due calendar mode initialization
+	model.mode = ModeDueCalendar
+	model.calendar.SetFocused(true)
+	
+	// Verify calendar responds to navigation
+	initialDate := model.calendar.GetSelectedDate()
+	
+	// Test navigation keys work
+	rightKey := tea.KeyMsg{Type: tea.KeyRight}
+	updatedModelInterface, _ := model.updateDueCalendar(rightKey)
+	updatedModel := updatedModelInterface.(*ReviewModel)
+	
+	expectedDate := initialDate.AddDate(0, 0, 1)
+	if !isSameDay(updatedModel.calendar.GetSelectedDate(), expectedDate) {
+		t.Error("Calendar navigation should work in due date flow")
+	}
+	
+	// Test date confirmation
+	enterKey := tea.KeyMsg{Type: tea.KeyEnter}
+	updatedModelInterface, cmd := updatedModel.updateDueCalendar(enterKey)
+	updatedModel = updatedModelInterface.(*ReviewModel)
+	
+	if updatedModel.mode != ModeViewing {
+		t.Errorf("Expected transition to ModeViewing, got %v", updatedModel.mode)
+	}
+	
+	if cmd == nil {
+		t.Error("Should have command to set due date")
+	}
+}
+
+// TestDueDateTextInputParsing tests that due date text input works with various formats
+func TestDueDateTextInputParsing(t *testing.T) {
+	testCases := []struct {
+		input    string
+		shouldWork bool
+	}{
+		{"today", true},
+		{"tomorrow", true}, 
+		{"next week", true},
+		{"2024-12-25", true},
+		{"", false}, // empty should not execute
+	}
+	
+	for _, tc := range testCases {
+		t.Run(tc.input, func(t *testing.T) {
+			model := NewReviewModel()
+			model.mode = ModeInputDueDate
+			model.tasks = []string{"test-uuid"}
+			model.current = 0
+			
+			model.textInput.SetValue(tc.input)
+			
+			keyMsg := tea.KeyMsg{Type: tea.KeyEnter}
+			_, cmd := model.updateDueDateInput(keyMsg)
+			
+			if tc.shouldWork && cmd == nil {
+				t.Errorf("Expected command for input %q", tc.input)
+			}
+			if !tc.shouldWork && cmd != nil {
+				t.Errorf("Expected no command for input %q", tc.input)
+			}
+		})
+	}
+}

@@ -28,6 +28,8 @@ const (
 	ModeInputWaitReason
 	ModeInputModification
 	ModeWaitCalendar
+	ModeDueCalendar
+	ModeInputDueDate
 	ModeCelebrating
 )
 
@@ -83,6 +85,7 @@ type KeyMap struct {
 	Complete key.Binding
 	Delete   key.Binding
 	Wait     key.Binding
+	Due      key.Binding
 	Skip     key.Binding
 	
 	// General
@@ -135,6 +138,10 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("w"),
 			key.WithHelp("w", "wait task"),
 		),
+		Due: key.NewBinding(
+			key.WithKeys("u"),
+			key.WithHelp("u", "due date"),
+		),
 		Skip: key.NewBinding(
 			key.WithKeys("s"),
 			key.WithHelp("s", "skip task"),
@@ -170,7 +177,7 @@ func DefaultKeyMap() KeyMap {
 
 // ShortHelp returns the short help text
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Review, k.Edit, k.Modify, k.Complete, k.Delete, k.Wait, k.Skip, k.Help, k.Quit}
+	return []key.Binding{k.Review, k.Edit, k.Modify, k.Complete, k.Delete, k.Wait, k.Due, k.Skip, k.Help, k.Quit}
 }
 
 // FullHelp returns the full help text
@@ -178,7 +185,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.NextTask, k.PrevTask},
 		{k.Review, k.Edit, k.Modify},
-		{k.Complete, k.Delete, k.Wait, k.Skip},
+		{k.Complete, k.Delete, k.Wait, k.Due, k.Skip},
 		{k.Help, k.Quit},
 	}
 }
@@ -276,6 +283,10 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateWaitReasonInput(msg)
 		case ModeWaitCalendar:
 			return m.updateWaitCalendar(msg)
+		case ModeDueCalendar:
+			return m.updateDueCalendar(msg)
+		case ModeInputDueDate:
+			return m.updateDueDateInput(msg)
 		}
 		
 		switch {
@@ -326,6 +337,11 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = ModeWaitCalendar
 			m.calendar.SetFocused(true)
 			m.message = "Select wait date (Tab to toggle text input):"
+
+		case key.Matches(msg, m.keys.Due):
+			m.mode = ModeDueCalendar
+			m.calendar.SetFocused(true)
+			m.message = "Select due date (Tab to toggle text input):"
 
 		case key.Matches(msg, m.keys.Skip):
 			return m, m.skipCurrentTask()
@@ -396,14 +412,14 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Update components based on mode
-	if m.mode == ModeInputModification || m.mode == ModeInputWaitDate || m.mode == ModeInputWaitReason {
+	if m.mode == ModeInputModification || m.mode == ModeInputWaitDate || m.mode == ModeInputWaitReason || m.mode == ModeInputDueDate {
 		// Don't process the triggering key if mode just changed
 		if !m.modeJustChanged {
 			m.textInput, cmd = m.textInput.Update(msg)
 			cmds = append(cmds, cmd)
 		}
 		m.modeJustChanged = false
-	} else if m.mode == ModeWaitCalendar {
+	} else if m.mode == ModeWaitCalendar || m.mode == ModeDueCalendar {
 		m.calendar, cmd = m.calendar.Update(msg)
 		cmds = append(cmds, cmd)
 	} else if m.mode == ModeCelebrating {
@@ -594,6 +610,73 @@ func (m *ReviewModel) updateWaitCalendar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// updateDueCalendar handles calendar input for due date selection
+func (m *ReviewModel) updateDueCalendar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.ToggleCalendar):
+		// Switch to text input mode
+		m.mode = ModeInputDueDate
+		m.calendar.SetFocused(false)
+		m.textInput.Placeholder = "Enter due date (e.g., tomorrow, next week, 2024-12-25)"
+		m.textInput.SetValue("")
+		m.message = "Enter due date (Tab to toggle calendar):"
+		return m, nil
+		
+	case key.Matches(msg, m.keys.Cancel):
+		m.mode = ModeViewing
+		m.calendar.SetFocused(false)
+		m.message = ""
+		return m, nil
+		
+	case key.Matches(msg, m.keys.Confirm):
+		// Select the date from calendar
+		dueDate := m.calendar.GetSelectedDateString()
+		m.mode = ModeViewing
+		m.calendar.SetFocused(false)
+		m.message = ""
+		return m, m.dueCurrentTask(dueDate)
+	}
+	
+	// Forward unhandled keys to calendar for navigation
+	var cmd tea.Cmd
+	m.calendar, cmd = m.calendar.Update(msg)
+	return m, cmd
+}
+
+// updateDueDateInput handles due date text input
+func (m *ReviewModel) updateDueDateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	
+	switch msg.Type {
+	case tea.KeyEnter:
+		dueDate := strings.TrimSpace(m.textInput.Value())
+		if dueDate == "" {
+			m.mode = ModeViewing
+			m.message = ""
+			return m, nil
+		}
+		m.mode = ModeViewing
+		m.message = ""
+		return m, m.dueCurrentTask(dueDate)
+		
+	case tea.KeyEscape:
+		m.mode = ModeViewing
+		m.message = ""
+		return m, nil
+		
+	case tea.KeyTab:
+		// Switch back to calendar mode
+		m.mode = ModeDueCalendar
+		m.calendar.SetFocused(true)
+		m.message = "Select due date (Tab to toggle text input):"
+		return m, nil
+	}
+	
+	// Update the text input with the keystroke
+	m.textInput, cmd = m.textInput.Update(msg)
+	return m, cmd
+}
+
 // View renders the review interface
 func (m *ReviewModel) View() string {
 	if m.quitting {
@@ -609,9 +692,9 @@ func (m *ReviewModel) View() string {
 	// Main content area
 	if m.mode == ModeConfirmDelete {
 		sections = append(sections, m.renderConfirmation())
-	} else if m.mode == ModeInputModification || m.mode == ModeInputWaitDate || m.mode == ModeInputWaitReason {
+	} else if m.mode == ModeInputModification || m.mode == ModeInputWaitDate || m.mode == ModeInputWaitReason || m.mode == ModeInputDueDate {
 		sections = append(sections, m.renderInput())
-	} else if m.mode == ModeWaitCalendar {
+	} else if m.mode == ModeWaitCalendar || m.mode == ModeDueCalendar {
 		sections = append(sections, m.renderCalendar())
 	} else if m.mode == ModeCelebrating {
 		sections = append(sections, m.confetti.View())
@@ -909,6 +992,16 @@ func (m *ReviewModel) waitCurrentTask(waitDate, reason string) tea.Cmd {
 			return errorMsg{err}
 		}
 		message := fmt.Sprintf("Task set to wait until %s.", waitDate)
+		return actionCompletedMsg{message: message}
+	}
+}
+
+func (m *ReviewModel) dueCurrentTask(dueDate string) tea.Cmd {
+	return func() tea.Msg {
+		if err := taskwarrior.SetDueDate(m.tasks[m.current], dueDate); err != nil {
+			return errorMsg{err}
+		}
+		message := fmt.Sprintf("Task due date set to %s.", dueDate)
 		return actionCompletedMsg{message: message}
 	}
 }

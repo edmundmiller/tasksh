@@ -201,3 +201,11 @@ func WaitTask(uuid, waitUntil, reason string) error {
 	}
 	return nil
 }
+
+// SetDueDate sets or updates the due date for a task
+func SetDueDate(uuid, dueDate string) error {
+	if _, err := executeTask("rc.confirmation:no", "rc.verbose:nothing", uuid, "modify", "due:"+dueDate); err != nil {
+		return fmt.Errorf("failed to set due date: %w", err)
+	}
+	return nil
+}
