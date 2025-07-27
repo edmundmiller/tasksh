@@ -1,9 +1,35 @@
+# Go binary
+tasksh
+
+# Editor files
+*~
+.*.swp
+*.tmp
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+
+# Output of go coverage
+*.out
+
+# Go vendor directory (if using vendor)
+vendor/
+
+# Go workspace file
+go.work
+
+# Old C/C++ build artifacts (kept for historical reference)
 cmake.h
 commit.h
 Makefile
 src/tasksh
-*~
-.*.swp
 CMakeFiles
 CMakeCache.txt
 cmake_install.cmake
@@ -14,4 +40,3 @@ CPackSourceConfig.cmake
 patches
 liblibshared.a
 libtasksh.a
-*.exe
