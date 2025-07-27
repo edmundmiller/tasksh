@@ -3,6 +3,7 @@ package review
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -10,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/maaslalani/confetty/confetti"
 
 	"github.com/emiller/tasksh/internal/taskwarrior"
 )
@@ -26,6 +28,7 @@ const (
 	ModeInputWaitReason
 	ModeInputModification
 	ModeWaitCalendar
+	ModeCelebrating
 )
 
 // ReviewModel represents the state of the Bubble Tea review interface
@@ -43,6 +46,7 @@ type ReviewModel struct {
 	textInput  textinput.Model
 	calendar   CalendarModel
 	completion *CompletionModel
+	confetti   tea.Model
 	keys       KeyMap
 
 	// Application state
@@ -61,6 +65,9 @@ type ReviewModel struct {
 	
 	// Completion state
 	selectedSuggestion int
+	
+	// Celebration state
+	celebrationStart time.Time
 }
 
 // KeyMap defines the key bindings for the review interface
@@ -209,12 +216,16 @@ func NewReviewModel() *ReviewModel {
 	completion := NewCompletionModel()
 	completion.LoadDynamicData() // Load projects and tags
 
+	// Create confetti model
+	confettiModel := confetti.InitialModel()
+
 	return &ReviewModel{
 		viewport:   vp,
 		help:       h,
 		textInput:  ti,
 		calendar:   cal,
 		completion: completion,
+		confetti:   confettiModel,
 		keys:       DefaultKeyMap(),
 		mode:       ModeViewing,
 	}
@@ -247,6 +258,10 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		
 		m.viewport.Width = msg.Width - 2
 		m.viewport.Height = msg.Height - verticalMarginHeight
+		
+		// Forward window size to confetti
+		m.confetti, cmd = m.confetti.Update(msg)
+		cmds = append(cmds, cmd)
 
 	case tea.KeyMsg:
 		// Handle special input modes
@@ -329,10 +344,20 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.current++
 			return m, m.loadCurrentTask()
 		} else {
-			// Review complete - set quitting to exit gracefully
-			m.quitting = true
-			m.message = fmt.Sprintf("Review complete! %d of %d tasks reviewed.", m.reviewed, len(m.tasks))
-			return m, tea.Quit
+			// Review complete - start celebration!
+			m.mode = ModeCelebrating
+			m.celebrationStart = time.Now()
+			m.message = fmt.Sprintf("🎉 Review complete! %d of %d tasks reviewed. 🎉", m.reviewed, len(m.tasks))
+			// Initialize confetti with window size and start celebration timer
+			confettiCmd := m.confetti.Init()
+			sizeCmd := func() tea.Msg {
+				return tea.WindowSizeMsg{Width: m.width, Height: m.height}
+			}
+			celebrationCmd := func() tea.Msg {
+				time.Sleep(3 * time.Second) // Show confetti for 3 seconds
+				return celebrationCompleteMsg{}
+			}
+			return m, tea.Batch(confettiCmd, tea.Cmd(sizeCmd), tea.Cmd(celebrationCmd))
 		}
 
 	case taskSkippedMsg:
@@ -344,11 +369,26 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.current++
 			return m, m.loadCurrentTask()
 		} else {
-			// Review complete - set quitting to exit gracefully
-			m.quitting = true
-			m.message = fmt.Sprintf("Review complete! %d of %d tasks reviewed.", m.reviewed, len(m.tasks))
-			return m, tea.Quit
+			// Review complete - start celebration!
+			m.mode = ModeCelebrating
+			m.celebrationStart = time.Now()
+			m.message = fmt.Sprintf("🎉 Review complete! %d of %d tasks reviewed. 🎉", m.reviewed, len(m.tasks))
+			// Initialize confetti with window size and start celebration timer
+			confettiCmd := m.confetti.Init()
+			sizeCmd := func() tea.Msg {
+				return tea.WindowSizeMsg{Width: m.width, Height: m.height}
+			}
+			celebrationCmd := func() tea.Msg {
+				time.Sleep(3 * time.Second) // Show confetti for 3 seconds
+				return celebrationCompleteMsg{}
+			}
+			return m, tea.Batch(confettiCmd, tea.Cmd(sizeCmd), tea.Cmd(celebrationCmd))
 		}
+
+	case celebrationCompleteMsg:
+		// Celebration finished, now quit gracefully
+		m.quitting = true
+		return m, tea.Quit
 
 	case errorMsg:
 		m.err = msg.error
@@ -365,6 +405,9 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.modeJustChanged = false
 	} else if m.mode == ModeWaitCalendar {
 		m.calendar, cmd = m.calendar.Update(msg)
+		cmds = append(cmds, cmd)
+	} else if m.mode == ModeCelebrating {
+		m.confetti, cmd = m.confetti.Update(msg)
 		cmds = append(cmds, cmd)
 	} else {
 		m.viewport, cmd = m.viewport.Update(msg)
@@ -567,6 +610,8 @@ func (m *ReviewModel) View() string {
 		sections = append(sections, m.renderInput())
 	} else if m.mode == ModeWaitCalendar {
 		sections = append(sections, m.renderCalendar())
+	} else if m.mode == ModeCelebrating {
+		sections = append(sections, m.confetti.View())
 	} else {
 		sections = append(sections, m.viewport.View())
 	}
@@ -774,6 +819,8 @@ type actionCompletedMsg struct {
 type taskSkippedMsg struct {
 	message string
 }
+
+type celebrationCompleteMsg struct{}
 
 type errorMsg struct {
 	error error
