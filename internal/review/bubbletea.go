@@ -329,8 +329,25 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.current++
 			return m, m.loadCurrentTask()
 		} else {
-			// Review complete
-			m.message = fmt.Sprintf("Review complete! %d of %d tasks reviewed.", m.reviewed, m.total)
+			// Review complete - set quitting to exit gracefully
+			m.quitting = true
+			m.message = fmt.Sprintf("Review complete! %d of %d tasks reviewed.", m.reviewed, len(m.tasks))
+			return m, tea.Quit
+		}
+
+	case taskSkippedMsg:
+		m.message = msg.message
+		// Don't increment reviewed count for skipped tasks
+		
+		// Move to next task if not at the end
+		if m.current < len(m.tasks)-1 {
+			m.current++
+			return m, m.loadCurrentTask()
+		} else {
+			// Review complete - set quitting to exit gracefully
+			m.quitting = true
+			m.message = fmt.Sprintf("Review complete! %d of %d tasks reviewed.", m.reviewed, len(m.tasks))
+			return m, tea.Quit
 		}
 
 	case errorMsg:
@@ -754,6 +771,10 @@ type actionCompletedMsg struct {
 	message string
 }
 
+type taskSkippedMsg struct {
+	message string
+}
+
 type errorMsg struct {
 	error error
 }
@@ -819,7 +840,7 @@ func (m *ReviewModel) deleteCurrentTask() tea.Cmd {
 func (m *ReviewModel) skipCurrentTask() tea.Cmd {
 	return func() tea.Msg {
 		// Just move to next task without marking as reviewed
-		return actionCompletedMsg{message: "Task skipped."}
+		return taskSkippedMsg{message: "Task skipped."}
 	}
 }
 
