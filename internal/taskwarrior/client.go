@@ -227,6 +227,21 @@ func RemoveWaitDate(uuid string) error {
 	return nil
 }
 
+// UndoLastAction undoes the most recent taskwarrior change
+func UndoLastAction() error {
+	output, err := executeTask("rc.confirmation:no", "undo")
+	if err != nil {
+		return fmt.Errorf("failed to undo last action: %w", err)
+	}
+	
+	// Check if there was actually something to undo
+	if strings.Contains(output, "No operations available to undo") {
+		return fmt.Errorf("no operations available to undo")
+	}
+	
+	return nil
+}
+
 // GetContexts returns a list of available contexts
 func GetContexts() ([]string, error) {
 	output, err := executeTask("context")

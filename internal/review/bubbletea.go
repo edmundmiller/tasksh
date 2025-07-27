@@ -117,6 +117,7 @@ type KeyMap struct {
 	Context  key.Binding
 	AIAnalysis key.Binding
 	PromptAgent key.Binding
+	Undo     key.Binding
 	
 	// General
 	Help key.Binding
@@ -188,6 +189,10 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("p"),
 			key.WithHelp("p", "prompt agent"),
 		),
+		Undo: key.NewBinding(
+			key.WithKeys("z"),
+			key.WithHelp("z", "undo last action"),
+		),
 		
 		// General
 		Help: key.NewBinding(
@@ -219,7 +224,7 @@ func DefaultKeyMap() KeyMap {
 
 // ShortHelp returns the short help text
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Review, k.Edit, k.Modify, k.Complete, k.Delete, k.Wait, k.Due, k.Skip, k.Context, k.AIAnalysis, k.PromptAgent, k.Help, k.Quit}
+	return []key.Binding{k.Review, k.Edit, k.Modify, k.Complete, k.Delete, k.Wait, k.Due, k.Skip, k.Context, k.AIAnalysis, k.PromptAgent, k.Undo, k.Help, k.Quit}
 }
 
 // FullHelp returns the full help text
@@ -228,7 +233,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.NextTask, k.PrevTask},
 		{k.Review, k.Edit, k.Modify},
 		{k.Complete, k.Delete, k.Wait, k.Due, k.Skip},
-		{k.Context, k.AIAnalysis, k.PromptAgent, k.Help, k.Quit},
+		{k.Context, k.AIAnalysis, k.PromptAgent, k.Undo, k.Help, k.Quit},
 	}
 }
 
@@ -244,7 +249,7 @@ func (c ConditionalKeyMap) ShortHelp() []key.Binding {
 	if c.aiAvailable {
 		bindings = append(bindings, c.keyMap.AIAnalysis, c.keyMap.PromptAgent)
 	}
-	bindings = append(bindings, c.keyMap.Help, c.keyMap.Quit)
+	bindings = append(bindings, c.keyMap.Undo, c.keyMap.Help, c.keyMap.Quit)
 	return bindings
 }
 
@@ -254,7 +259,7 @@ func (c ConditionalKeyMap) FullHelp() [][]key.Binding {
 	if c.aiAvailable {
 		lastRow = append(lastRow, c.keyMap.AIAnalysis, c.keyMap.PromptAgent)
 	}
-	lastRow = append(lastRow, c.keyMap.Help, c.keyMap.Quit)
+	lastRow = append(lastRow, c.keyMap.Undo, c.keyMap.Help, c.keyMap.Quit)
 	
 	return [][]key.Binding{
 		{c.keyMap.NextTask, c.keyMap.PrevTask},
@@ -499,6 +504,9 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.message = "Prompt agent not available (OpenAI API key not configured)"
 			}
+			
+		case key.Matches(msg, m.keys.Undo):
+			return m, m.undoLastAction()
 		}
 
 	case taskLoadedMsg:
@@ -594,6 +602,11 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case promptCommandsExecutedMsg:
 		m.mode = ModeViewing
 		m.message = fmt.Sprintf("Commands executed: %s", msg.result)
+		
+	case undoCompletedMsg:
+		m.message = msg.message
+		// Reload current task to show updated information
+		return m, m.loadCurrentTask()
 	}
 
 	// Update components based on mode
@@ -1186,6 +1199,10 @@ type promptCommandsExecutedMsg struct {
 	result string
 }
 
+type undoCompletedMsg struct {
+	message string
+}
+
 // Commands for async operations
 func (m *ReviewModel) loadCurrentTask() tea.Cmd {
 	return func() tea.Msg {
@@ -1297,6 +1314,16 @@ func (m *ReviewModel) removeWaitCurrentTask() tea.Cmd {
 		}
 		message := "Task wait date removed."
 		return actionCompletedMsg{message: message}
+	}
+}
+
+func (m *ReviewModel) undoLastAction() tea.Cmd {
+	return func() tea.Msg {
+		if err := taskwarrior.UndoLastAction(); err != nil {
+			return errorMsg{err}
+		}
+		message := "Last action undone."
+		return undoCompletedMsg{message: message}
 	}
 }
 
