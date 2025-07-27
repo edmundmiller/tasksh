@@ -87,6 +87,7 @@ type ReviewModel struct {
 	
 	// AI analysis state
 	aiAnalyzer      *ai.Analyzer
+	aiAvailable     bool // Whether AI features are available
 	currentAnalysis *ai.TaskAnalysis
 	aiSpinner       spinner.Model
 	
@@ -229,6 +230,38 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	}
 }
 
+// ConditionalKeyMap wraps the KeyMap and conditionally shows AI features
+type ConditionalKeyMap struct {
+	keyMap      KeyMap
+	aiAvailable bool
+}
+
+// ShortHelp returns the short help text with conditional AI features
+func (c ConditionalKeyMap) ShortHelp() []key.Binding {
+	bindings := []key.Binding{c.keyMap.Review, c.keyMap.Edit, c.keyMap.Modify, c.keyMap.Complete, c.keyMap.Delete, c.keyMap.Wait, c.keyMap.Due, c.keyMap.Skip, c.keyMap.Context}
+	if c.aiAvailable {
+		bindings = append(bindings, c.keyMap.AIAnalysis, c.keyMap.PromptAgent)
+	}
+	bindings = append(bindings, c.keyMap.Help, c.keyMap.Quit)
+	return bindings
+}
+
+// FullHelp returns the full help text with conditional AI features
+func (c ConditionalKeyMap) FullHelp() [][]key.Binding {
+	lastRow := []key.Binding{c.keyMap.Context}
+	if c.aiAvailable {
+		lastRow = append(lastRow, c.keyMap.AIAnalysis, c.keyMap.PromptAgent)
+	}
+	lastRow = append(lastRow, c.keyMap.Help, c.keyMap.Quit)
+	
+	return [][]key.Binding{
+		{c.keyMap.NextTask, c.keyMap.PrevTask},
+		{c.keyMap.Review, c.keyMap.Edit, c.keyMap.Modify},
+		{c.keyMap.Complete, c.keyMap.Delete, c.keyMap.Wait, c.keyMap.Due, c.keyMap.Skip},
+		lastRow,
+	}
+}
+
 // NewReviewModel creates a new review model
 func NewReviewModel() *ReviewModel {
 	// Create viewport
@@ -265,10 +298,15 @@ func NewReviewModel() *ReviewModel {
 	// Create confetti model
 	confettiModel := confetti.InitialModel()
 
-	// Create AI analyzer
+	// Create AI analyzer (only if API is available)
 	var aiAnalyzer *ai.Analyzer
+	var aiAvailable bool
 	if timeDB, err := timedb.New(); err == nil {
-		aiAnalyzer = ai.NewAnalyzer(timeDB)
+		// Check if AI/OpenAI is available before creating analyzer
+		if ai.CheckOpenAIAvailable() == nil {
+			aiAnalyzer = ai.NewAnalyzer(timeDB)
+			aiAvailable = true
+		}
 		// Note: TimeDB will be closed when the model is cleaned up
 		// For now, we'll leave it open during the review session
 	}
@@ -293,6 +331,7 @@ func NewReviewModel() *ReviewModel {
 		keys:          DefaultKeyMap(),
 		mode:          ModeViewing,
 		aiAnalyzer:    aiAnalyzer,
+		aiAvailable:   aiAvailable,
 		aiSpinner:     aiSpinner,
 		promptSpinner: promptSpinner,
 	}
@@ -429,7 +468,7 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.initContextSelect()
 			
 		case key.Matches(msg, m.keys.AIAnalysis):
-			if m.aiAnalyzer != nil {
+			if m.aiAvailable && m.aiAnalyzer != nil {
 				m.mode = ModeAILoading
 				m.message = "Analyzing task with AI..."
 				// Start the spinner with a tick command
@@ -438,11 +477,11 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, tea.Batch(tickCmd, m.analyzeCurrentTask())
 			} else {
-				m.message = "AI analysis not available (OpenAI API key or timedb unavailable)"
+				m.message = "AI analysis not available (OpenAI API key not configured)"
 			}
 			
 		case key.Matches(msg, m.keys.PromptAgent):
-			if m.aiAnalyzer != nil {
+			if m.aiAvailable && m.aiAnalyzer != nil {
 				m.mode = ModePromptAgent
 				m.textInput.Placeholder = "Tell me what you want to do with this task (e.g., 'complete this task and log 2 hours', 'start timing this task')"
 				m.textInput.SetValue("")
@@ -450,7 +489,7 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.message = "Prompt Agent - Tell me what to do:"
 				m.modeJustChanged = true
 			} else {
-				m.message = "Prompt agent not available (OpenAI API key unavailable)"
+				m.message = "Prompt agent not available (OpenAI API key not configured)"
 			}
 		}
 
@@ -857,8 +896,9 @@ func (m *ReviewModel) View() string {
 		sections = append(sections, messageStyle.Render(m.message))
 	}
 
-	// Help
-	sections = append(sections, m.help.View(m.keys))
+	// Help (conditional AI features)
+	conditionalKeys := ConditionalKeyMap{keyMap: m.keys, aiAvailable: m.aiAvailable}
+	sections = append(sections, m.help.View(conditionalKeys))
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }

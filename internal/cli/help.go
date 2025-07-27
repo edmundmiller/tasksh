@@ -1,6 +1,10 @@
 package cli
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/emiller/tasksh/internal/ai"
+)
 
 func ShowHelp() {
 	fmt.Println("tasksh - Interactive task review shell")
@@ -16,8 +20,13 @@ func ShowHelp() {
 	fmt.Println("During review, you can:")
 	fmt.Println("  - Edit task (opens task editor)")
 	fmt.Println("  - Modify task (with smart completion for projects/tags/priorities)")
-	fmt.Println("  - AI Analysis (get OpenAI-powered suggestions for improvements)")
-	fmt.Println("  - Prompt Agent (tell AI what to do with natural language)")
+	
+	// Only show AI features if available
+	if ai.CheckOpenAIAvailable() == nil {
+		fmt.Println("  - AI Analysis (get OpenAI-powered suggestions for improvements)")
+		fmt.Println("  - Prompt Agent (tell AI what to do with natural language)")
+	}
+	
 	fmt.Println("  - Complete task (with optional time tracking)")
 	fmt.Println("  - Delete task")
 	fmt.Println("  - Wait task (set waiting status with date and reason)")
