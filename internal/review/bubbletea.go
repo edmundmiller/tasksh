@@ -588,7 +588,10 @@ func (m *ReviewModel) updateWaitCalendar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	
-	return m, nil
+	// Forward unhandled keys to calendar for navigation
+	var cmd tea.Cmd
+	m.calendar, cmd = m.calendar.Update(msg)
+	return m, cmd
 }
 
 // View renders the review interface

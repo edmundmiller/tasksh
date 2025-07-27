@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/emiller/tasksh/testdata"
 )
 
@@ -286,4 +287,90 @@ func TestReviewWorkflow(t *testing.T) {
 	// - Processing AI analysis
 	// - Applying suggestions
 	// - Recording completion times
+}
+
+// TestCalendarDateParsing tests various date input formats
+func TestCalendarDateParsing(t *testing.T) {
+	testCases := []struct {
+		input    string
+		expected bool // whether parsing should succeed
+	}{
+		{"today", true},
+		{"tomorrow", true},
+		{"next week", true},
+		{"monday", true},
+		{"2024-12-25", true},
+		{"12/25/2024", true},
+		{"Dec 25, 2024", true},
+		{"+7", true},
+		{"in 3 days", true},
+		{"invalid date", false},
+		{"", false},
+	}
+	
+	for _, tc := range testCases {
+		t.Run(tc.input, func(t *testing.T) {
+			_, err := ParseDateInput(tc.input)
+			if tc.expected && err != nil {
+				t.Errorf("Expected %q to parse successfully, got error: %v", tc.input, err)
+			}
+			if !tc.expected && err == nil {
+				t.Errorf("Expected %q to fail parsing, but it succeeded", tc.input)
+			}
+		})
+	}
+}
+
+// TestReviewModelWaitFlow tests the complete wait date selection flow
+func TestReviewModelWaitFlow(t *testing.T) {
+	model := NewReviewModel()
+	
+	// Test calendar mode initialization
+	model.mode = ModeWaitCalendar
+	model.calendar.SetFocused(true)
+	
+	// Verify calendar responds to navigation
+	initialDate := model.calendar.GetSelectedDate()
+	
+	// Test navigation keys work
+	rightKey := tea.KeyMsg{Type: tea.KeyRight}
+	updatedModelInterface, _ := model.updateWaitCalendar(rightKey)
+	updatedModel := updatedModelInterface.(*ReviewModel)
+	
+	expectedDate := initialDate.AddDate(0, 0, 1)
+	if !isSameDay(updatedModel.calendar.GetSelectedDate(), expectedDate) {
+		t.Error("Calendar navigation should work in wait flow")
+	}
+	
+	// Test date confirmation
+	enterKey := tea.KeyMsg{Type: tea.KeyEnter}
+	updatedModelInterface, _ = updatedModel.updateWaitCalendar(enterKey)
+	updatedModel = updatedModelInterface.(*ReviewModel)
+	
+	if updatedModel.mode != ModeInputWaitReason {
+		t.Errorf("Expected transition to ModeInputWaitReason, got %v", updatedModel.mode)
+	}
+	
+	if updatedModel.waitDate == "" {
+		t.Error("Wait date should be set after confirmation")
+	}
+}
+
+// TestCalendarKeyBindings tests that calendar key bindings are properly configured
+func TestCalendarKeyBindings(t *testing.T) {
+	keys := DefaultCalendarKeyMap()
+	
+	// Verify key bindings have help text
+	if keys.Up.Help().Key == "" {
+		t.Error("Up key should have help text")
+	}
+	if keys.Down.Help().Key == "" {
+		t.Error("Down key should have help text")
+	}
+	if keys.Left.Help().Key == "" {
+		t.Error("Left key should have help text")
+	}
+	if keys.Right.Help().Key == "" {
+		t.Error("Right key should have help text")
+	}
 }
