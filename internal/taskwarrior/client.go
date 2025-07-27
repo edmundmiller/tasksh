@@ -209,3 +209,76 @@ func SetDueDate(uuid, dueDate string) error {
 	}
 	return nil
 }
+
+// GetContexts returns a list of available contexts
+func GetContexts() ([]string, error) {
+	output, err := executeTask("context")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get contexts: %w", err)
+	}
+	
+	var contexts []string
+	lines := strings.Split(output, "\n")
+	
+	// Track unique context names
+	contextMap := make(map[string]bool)
+	
+	// Skip header lines and parse context names
+	for i, line := range lines {
+		if i < 2 || strings.TrimSpace(line) == "" {
+			continue
+		}
+		
+		// Skip the usage line at the bottom
+		if strings.HasPrefix(strings.TrimSpace(line), "Use 'task context") {
+			continue
+		}
+		
+		// Only process lines that start at column 0 (context names)
+		// Lines starting with spaces are continuation lines for definitions
+		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+			fields := strings.Fields(line)
+			if len(fields) > 0 {
+				contextName := fields[0]
+				// Only add unique context names and skip empty names
+				if contextName != "" && !contextMap[contextName] {
+					contextMap[contextName] = true
+					contexts = append(contexts, contextName)
+				}
+			}
+		}
+	}
+	
+	// Add "none" option to clear context
+	contexts = append(contexts, "none")
+	
+	return contexts, nil
+}
+
+// SetContext switches to the specified context
+func SetContext(contextName string) error {
+	if _, err := executeTask("context", contextName); err != nil {
+		return fmt.Errorf("failed to set context: %w", err)
+	}
+	return nil
+}
+
+// GetCurrentContext returns the currently active context
+func GetCurrentContext() (string, error) {
+	output, err := executeTask("context")
+	if err != nil {
+		return "", fmt.Errorf("failed to get current context: %w", err)
+	}
+	
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "yes") {
+			fields := strings.Fields(line)
+			if len(fields) > 0 {
+				return fields[0], nil
+			}
+		}
+	}
+	
+	return "none", nil
+}

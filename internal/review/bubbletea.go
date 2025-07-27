@@ -31,6 +31,7 @@ const (
 	ModeDueCalendar
 	ModeInputDueDate
 	ModeCelebrating
+	ModeContextSelect
 )
 
 // ReviewModel represents the state of the Bubble Tea review interface
@@ -70,6 +71,11 @@ type ReviewModel struct {
 	
 	// Celebration state
 	celebrationStart time.Time
+	
+	// Context state
+	contexts          []string
+	selectedContext   int
+	currentContext    string
 }
 
 // KeyMap defines the key bindings for the review interface
@@ -87,6 +93,7 @@ type KeyMap struct {
 	Wait     key.Binding
 	Due      key.Binding
 	Skip     key.Binding
+	Context  key.Binding
 	
 	// General
 	Help key.Binding
@@ -146,6 +153,10 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("s"),
 			key.WithHelp("s", "skip task"),
 		),
+		Context: key.NewBinding(
+			key.WithKeys("x"),
+			key.WithHelp("x", "switch context"),
+		),
 		
 		// General
 		Help: key.NewBinding(
@@ -177,7 +188,7 @@ func DefaultKeyMap() KeyMap {
 
 // ShortHelp returns the short help text
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Review, k.Edit, k.Modify, k.Complete, k.Delete, k.Wait, k.Due, k.Skip, k.Help, k.Quit}
+	return []key.Binding{k.Review, k.Edit, k.Modify, k.Complete, k.Delete, k.Wait, k.Due, k.Skip, k.Context, k.Help, k.Quit}
 }
 
 // FullHelp returns the full help text
@@ -186,7 +197,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.NextTask, k.PrevTask},
 		{k.Review, k.Edit, k.Modify},
 		{k.Complete, k.Delete, k.Wait, k.Due, k.Skip},
-		{k.Help, k.Quit},
+		{k.Context, k.Help, k.Quit},
 	}
 }
 
@@ -226,7 +237,7 @@ func NewReviewModel() *ReviewModel {
 	// Create confetti model
 	confettiModel := confetti.InitialModel()
 
-	return &ReviewModel{
+	model := &ReviewModel{
 		viewport:   vp,
 		help:       h,
 		textInput:  ti,
@@ -236,6 +247,15 @@ func NewReviewModel() *ReviewModel {
 		keys:       DefaultKeyMap(),
 		mode:       ModeViewing,
 	}
+
+	// Initialize current context
+	if currentContext, err := taskwarrior.GetCurrentContext(); err == nil {
+		model.currentContext = currentContext
+	} else {
+		model.currentContext = "none"
+	}
+
+	return model
 }
 
 // Init initializes the review model
@@ -287,6 +307,8 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDueCalendar(msg)
 		case ModeInputDueDate:
 			return m.updateDueDateInput(msg)
+		case ModeContextSelect:
+			return m.updateContextSelect(msg)
 		}
 		
 		switch {
@@ -345,6 +367,9 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.Skip):
 			return m, m.skipCurrentTask()
+
+		case key.Matches(msg, m.keys.Context):
+			return m, m.initContextSelect()
 		}
 
 	case taskLoadedMsg:
@@ -409,6 +434,17 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errorMsg:
 		m.err = msg.error
 		m.message = fmt.Sprintf("Error: %v", msg.error)
+
+	case contextsLoadedMsg:
+		m.contexts = msg.contexts
+		m.mode = ModeContextSelect
+		m.selectedContext = 0
+		m.message = "Select context (↑↓: navigate, Enter: select, ESC: cancel):"
+
+	case contextChangedMsg:
+		m.mode = ModeViewing
+		m.currentContext = msg.context
+		m.message = fmt.Sprintf("Context switched to: %s", msg.context)
 	}
 
 	// Update components based on mode
@@ -696,6 +732,8 @@ func (m *ReviewModel) View() string {
 		sections = append(sections, m.renderInput())
 	} else if m.mode == ModeWaitCalendar || m.mode == ModeDueCalendar {
 		sections = append(sections, m.renderCalendar())
+	} else if m.mode == ModeContextSelect {
+		sections = append(sections, m.renderContextSelect())
 	} else if m.mode == ModeCelebrating {
 		sections = append(sections, m.confetti.View())
 	} else {
@@ -912,6 +950,14 @@ type errorMsg struct {
 	error error
 }
 
+type contextsLoadedMsg struct {
+	contexts []string
+}
+
+type contextChangedMsg struct {
+	context string
+}
+
 // Commands for async operations
 func (m *ReviewModel) loadCurrentTask() tea.Cmd {
 	return func() tea.Msg {
@@ -1012,4 +1058,98 @@ func (m *ReviewModel) SetTasks(tasks []string, total int) {
 	m.total = total
 	m.current = 0
 	m.reviewed = 0
+}
+
+// updateContextSelect handles context selection input
+func (m *ReviewModel) updateContextSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Cancel):
+		m.mode = ModeViewing
+		m.message = ""
+		return m, nil
+
+	case key.Matches(msg, m.keys.Confirm):
+		if len(m.contexts) > 0 && m.selectedContext < len(m.contexts) {
+			selectedContext := m.contexts[m.selectedContext]
+			m.mode = ModeViewing
+			m.message = ""
+			return m, m.switchContext(selectedContext)
+		}
+		m.mode = ModeViewing
+		m.message = ""
+		return m, nil
+
+	case key.Matches(msg, m.keys.NextTask) || msg.String() == "down":
+		if len(m.contexts) > 0 {
+			m.selectedContext++
+			if m.selectedContext >= len(m.contexts) {
+				m.selectedContext = 0
+			}
+		}
+		return m, nil
+
+	case key.Matches(msg, m.keys.PrevTask) || msg.String() == "up":
+		if len(m.contexts) > 0 {
+			m.selectedContext--
+			if m.selectedContext < 0 {
+				m.selectedContext = len(m.contexts) - 1
+			}
+		}
+		return m, nil
+	}
+
+	return m, nil
+}
+
+// renderContextSelect renders the context selection interface
+func (m *ReviewModel) renderContextSelect() string {
+	contextStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("6")). // ANSI cyan
+		Padding(1, 2).
+		Margin(2, 4)
+
+	var content strings.Builder
+	content.WriteString("Available Contexts:\n\n")
+
+	for i, context := range m.contexts {
+		prefix := "  "
+		if i == m.selectedContext {
+			prefix = "▶ " // Highlight selected context
+		}
+
+		line := fmt.Sprintf("%s%s", prefix, context)
+		if context == m.currentContext {
+			line += " (current)"
+		}
+
+		content.WriteString(line)
+		content.WriteString("\n")
+	}
+
+	content.WriteString("\n↑↓: navigate  Enter: select  ESC: cancel")
+
+	return contextStyle.Render(content.String())
+}
+
+// initContextSelect initializes context selection mode
+func (m *ReviewModel) initContextSelect() tea.Cmd {
+	return func() tea.Msg {
+		contexts, err := taskwarrior.GetContexts()
+		if err != nil {
+			return errorMsg{err}
+		}
+
+		return contextsLoadedMsg{contexts: contexts}
+	}
+}
+
+// switchContext switches to the selected context
+func (m *ReviewModel) switchContext(contextName string) tea.Cmd {
+	return func() tea.Msg {
+		if err := taskwarrior.SetContext(contextName); err != nil {
+			return errorMsg{err}
+		}
+		return contextChangedMsg{context: contextName}
+	}
 }
