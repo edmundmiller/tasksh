@@ -25,6 +25,7 @@ const (
 	ModeInputWaitDate
 	ModeInputWaitReason
 	ModeInputModification
+	ModeWaitCalendar
 )
 
 // ReviewModel represents the state of the Bubble Tea review interface
@@ -37,10 +38,12 @@ type ReviewModel struct {
 	reviewed    int      // Number reviewed
 
 	// UI components
-	viewport  viewport.Model
-	help      help.Model
-	textInput textinput.Model
-	keys      KeyMap
+	viewport   viewport.Model
+	help       help.Model
+	textInput  textinput.Model
+	calendar   CalendarModel
+	completion *CompletionModel
+	keys       KeyMap
 
 	// Application state
 	mode     ReviewMode
@@ -48,12 +51,16 @@ type ReviewModel struct {
 	quitting bool
 	width    int
 	height   int
+	modeJustChanged bool // Prevents input from processing mode-triggering key
 
 	// For confirmations and input
 	pendingAction string
 	message       string
 	waitDate      string
 	waitReason    string
+	
+	// Completion state
+	selectedSuggestion int
 }
 
 // KeyMap defines the key bindings for the review interface
@@ -74,6 +81,9 @@ type KeyMap struct {
 	// General
 	Help key.Binding
 	Quit key.Binding
+	
+	// Calendar
+	ToggleCalendar key.Binding
 	
 	// Confirmations
 	Confirm key.Binding
@@ -133,6 +143,12 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("q", "quit"),
 		),
 		
+		// Calendar
+		ToggleCalendar: key.NewBinding(
+			key.WithKeys("tab"),
+			key.WithHelp("tab", "toggle calendar"),
+		),
+		
 		// Confirmations
 		Confirm: key.NewBinding(
 			key.WithKeys("y", "enter"),
@@ -185,12 +201,22 @@ func NewReviewModel() *ReviewModel {
 	ti := textinput.New()
 	ti.Focus()
 
+	// Create calendar
+	cal := NewCalendarModel()
+	cal.SetFocused(false) // Start unfocused
+
+	// Create completion model
+	completion := NewCompletionModel()
+	completion.LoadDynamicData() // Load projects and tags
+
 	return &ReviewModel{
-		viewport:  vp,
-		help:      h,
-		textInput: ti,
-		keys:      DefaultKeyMap(),
-		mode:      ModeViewing,
+		viewport:   vp,
+		help:       h,
+		textInput:  ti,
+		calendar:   cal,
+		completion: completion,
+		keys:       DefaultKeyMap(),
+		mode:       ModeViewing,
 	}
 }
 
@@ -233,6 +259,8 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateWaitDateInput(msg)
 		case ModeInputWaitReason:
 			return m.updateWaitReasonInput(msg)
+		case ModeWaitCalendar:
+			return m.updateWaitCalendar(msg)
 		}
 		
 		switch {
@@ -272,13 +300,17 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = ModeInputModification
 			m.textInput.Placeholder = "Enter modification (e.g., +tag, project:new, priority:H)"
 			m.textInput.SetValue("")
+			m.textInput.Focus()
 			m.message = "Enter modification:"
+			m.modeJustChanged = true
+			m.selectedSuggestion = 0
+			// Initialize completion suggestions
+			m.completion.UpdateSuggestions("", 0)
 
 		case key.Matches(msg, m.keys.Wait):
-			m.mode = ModeInputWaitDate
-			m.textInput.Placeholder = "Enter wait date (e.g., tomorrow, next week, 2024-12-25)"
-			m.textInput.SetValue("")
-			m.message = "Enter wait date:"
+			m.mode = ModeWaitCalendar
+			m.calendar.SetFocused(true)
+			m.message = "Select wait date (Tab to toggle text input):"
 
 		case key.Matches(msg, m.keys.Skip):
 			return m, m.skipCurrentTask()
@@ -308,7 +340,14 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Update components based on mode
 	if m.mode == ModeInputModification || m.mode == ModeInputWaitDate || m.mode == ModeInputWaitReason {
-		m.textInput, cmd = m.textInput.Update(msg)
+		// Don't process the triggering key if mode just changed
+		if !m.modeJustChanged {
+			m.textInput, cmd = m.textInput.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+		m.modeJustChanged = false
+	} else if m.mode == ModeWaitCalendar {
+		m.calendar, cmd = m.calendar.Update(msg)
 		cmds = append(cmds, cmd)
 	} else {
 		m.viewport, cmd = m.viewport.Update(msg)
@@ -336,6 +375,8 @@ func (m *ReviewModel) updateConfirmDelete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // updateModificationInput handles modification input
 func (m *ReviewModel) updateModificationInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	
 	switch msg.Type {
 	case tea.KeyEnter:
 		modification := strings.TrimSpace(m.textInput.Value())
@@ -352,13 +393,57 @@ func (m *ReviewModel) updateModificationInput(msg tea.KeyMsg) (tea.Model, tea.Cm
 		m.mode = ModeViewing
 		m.message = ""
 		return m, nil
+		
+	case tea.KeyTab:
+		// Apply selected completion suggestion if available
+		suggestions := m.completion.GetSuggestions()
+		if len(suggestions) > 0 && m.selectedSuggestion < len(suggestions) {
+			newText := m.completion.GetCompletionText(suggestions[m.selectedSuggestion], m.textInput.Value())
+			m.textInput.SetValue(newText)
+			m.textInput.CursorEnd()
+			// Reset selection and update suggestions
+			m.selectedSuggestion = 0
+			m.completion.UpdateSuggestions(m.textInput.Value(), m.textInput.Position())
+		}
+		return m, nil
+		
+	case tea.KeyUp:
+		// Navigate up in completion suggestions
+		suggestions := m.completion.GetSuggestions()
+		if len(suggestions) > 0 {
+			m.selectedSuggestion--
+			if m.selectedSuggestion < 0 {
+				m.selectedSuggestion = len(suggestions) - 1
+			}
+		}
+		return m, nil
+		
+	case tea.KeyDown:
+		// Navigate down in completion suggestions
+		suggestions := m.completion.GetSuggestions()
+		if len(suggestions) > 0 {
+			m.selectedSuggestion++
+			if m.selectedSuggestion >= len(suggestions) {
+				m.selectedSuggestion = 0
+			}
+		}
+		return m, nil
 	}
 	
-	return m, nil
+	// Update the text input with the keystroke
+	m.textInput, cmd = m.textInput.Update(msg)
+	
+	// Update completion suggestions based on new input and reset selection
+	m.completion.UpdateSuggestions(m.textInput.Value(), m.textInput.Position())
+	m.selectedSuggestion = 0
+	
+	return m, cmd
 }
 
 // updateWaitDateInput handles wait date input
 func (m *ReviewModel) updateWaitDateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	
 	switch msg.Type {
 	case tea.KeyEnter:
 		waitDate := strings.TrimSpace(m.textInput.Value())
@@ -377,13 +462,24 @@ func (m *ReviewModel) updateWaitDateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = ModeViewing
 		m.message = ""
 		return m, nil
+		
+	case tea.KeyTab:
+		// Switch back to calendar mode
+		m.mode = ModeWaitCalendar
+		m.calendar.SetFocused(true)
+		m.message = "Select wait date (Tab to toggle text input):"
+		return m, nil
 	}
 	
-	return m, nil
+	// Update the text input with the keystroke
+	m.textInput, cmd = m.textInput.Update(msg)
+	return m, cmd
 }
 
 // updateWaitReasonInput handles wait reason input
 func (m *ReviewModel) updateWaitReasonInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	
 	switch msg.Type {
 	case tea.KeyEnter:
 		waitReason := strings.TrimSpace(m.textInput.Value())
@@ -394,6 +490,41 @@ func (m *ReviewModel) updateWaitReasonInput(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 	case tea.KeyEscape:
 		m.mode = ModeViewing
 		m.message = ""
+		return m, nil
+	}
+	
+	// Update the text input with the keystroke
+	m.textInput, cmd = m.textInput.Update(msg)
+	return m, cmd
+}
+
+// updateWaitCalendar handles calendar input for wait date selection
+func (m *ReviewModel) updateWaitCalendar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.ToggleCalendar):
+		// Switch to text input mode
+		m.mode = ModeInputWaitDate
+		m.calendar.SetFocused(false)
+		m.textInput.Placeholder = "Enter wait date (e.g., tomorrow, next week, 2024-12-25)"
+		m.textInput.SetValue("")
+		m.message = "Enter wait date (Tab to toggle calendar):"
+		return m, nil
+		
+	case key.Matches(msg, m.keys.Cancel):
+		m.mode = ModeViewing
+		m.calendar.SetFocused(false)
+		m.message = ""
+		return m, nil
+		
+	case key.Matches(msg, m.keys.Confirm):
+		// Select the date from calendar
+		waitDate := m.calendar.GetSelectedDateString()
+		m.waitDate = waitDate
+		m.mode = ModeInputWaitReason
+		m.calendar.SetFocused(false)
+		m.textInput.Placeholder = "Enter wait reason (optional)"
+		m.textInput.SetValue("")
+		m.message = "Enter wait reason (optional):"
 		return m, nil
 	}
 	
@@ -417,6 +548,8 @@ func (m *ReviewModel) View() string {
 		sections = append(sections, m.renderConfirmation())
 	} else if m.mode == ModeInputModification || m.mode == ModeInputWaitDate || m.mode == ModeInputWaitReason {
 		sections = append(sections, m.renderInput())
+	} else if m.mode == ModeWaitCalendar {
+		sections = append(sections, m.renderCalendar())
 	} else {
 		sections = append(sections, m.viewport.View())
 	}
@@ -480,14 +613,89 @@ func (m *ReviewModel) renderInput() string {
 		Padding(1, 2).
 		Margin(2, 4)
 
+	content := ""
 	if m.message != "" {
-		content := fmt.Sprintf("%s\n\n%s\n\nPress ESC to cancel", 
-			m.message,
-			m.textInput.View())
-		return inputStyle.Render(content)
+		content = fmt.Sprintf("%s\n\n%s", m.message, m.textInput.View())
+	} else {
+		content = m.textInput.View()
 	}
 
-	return inputStyle.Render(m.textInput.View())
+	// Add completion suggestions for modify mode
+	if m.mode == ModeInputModification {
+		suggestions := m.completion.GetSuggestions()
+		if len(suggestions) > 0 {
+			content += "\n\n" + m.renderCompletionSuggestions(suggestions)
+		}
+		content += "\n\n↑↓: navigate  Tab: complete  ESC: cancel"
+	} else {
+		content += "\n\nPress ESC to cancel"
+	}
+
+	return inputStyle.Render(content)
+}
+
+// renderCompletionSuggestions renders the completion suggestions popup
+func (m *ReviewModel) renderCompletionSuggestions(suggestions []CompletionItem) string {
+	if len(suggestions) == 0 {
+		return ""
+	}
+
+	var lines []string
+	lines = append(lines, lipgloss.NewStyle().
+		Foreground(lipgloss.Color("6")).
+		Bold(true).
+		Render("Suggestions:"))
+
+	for i, suggestion := range suggestions {
+		prefix := "  "
+		if i == m.selectedSuggestion {
+			prefix = "▶ " // Highlight selected suggestion
+		}
+		
+		// Style based on completion type
+		var style lipgloss.Style
+		switch suggestion.Type {
+		case CompletionAttribute:
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // Yellow
+		case CompletionProject:
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // Green
+		case CompletionTag:
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("5")) // Magenta
+		case CompletionPriority:
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // Red
+		case CompletionStatus:
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("4")) // Blue
+		default:
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("7")) // White
+		}
+		
+		line := fmt.Sprintf("%s%s", prefix, style.Render(suggestion.Text))
+		if suggestion.Description != "" {
+			line += lipgloss.NewStyle().
+				Foreground(lipgloss.Color("8")).
+				Render(" - " + suggestion.Description)
+		}
+		
+		lines = append(lines, line)
+		
+		// Limit visible suggestions
+		if i >= 7 {
+			break
+		}
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// renderCalendar renders the calendar component
+func (m *ReviewModel) renderCalendar() string {
+	calendarStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("6")). // ANSI blue for calendar
+		Padding(1, 2).
+		Margin(2, 4)
+
+	return calendarStyle.Render(m.calendar.View())
 }
 
 // updateViewport updates the viewport content with current task info
@@ -576,12 +784,18 @@ func (m *ReviewModel) reviewCurrentTask() tea.Cmd {
 }
 
 func (m *ReviewModel) editCurrentTask() tea.Cmd {
-	return func() tea.Msg {
-		if err := taskwarrior.EditTask(m.tasks[m.current]); err != nil {
+	return tea.ExecProcess(taskwarrior.CreateEditCommand(m.tasks[m.current]), func(err error) tea.Msg {
+		if err != nil {
 			return errorMsg{err}
 		}
+		
+		// Mark task as reviewed after successful edit
+		if err := taskwarrior.MarkTaskReviewed(m.tasks[m.current]); err != nil {
+			return errorMsg{fmt.Errorf("edit succeeded but failed to mark as reviewed: %w", err)}
+		}
+		
 		return actionCompletedMsg{message: "Task updated."}
-	}
+	})
 }
 
 func (m *ReviewModel) completeCurrentTask() tea.Cmd {

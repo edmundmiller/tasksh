@@ -71,6 +71,7 @@ func EnsureReviewConfig() error {
 	return nil
 }
 
+
 // GetTasksForReview returns a list of task UUIDs that need review
 func GetTasksForReview() ([]string, error) {
 	output, err := executeTask(
@@ -123,7 +124,14 @@ func ShowTaskInfo(uuid string) error {
 	return cmd.Run()
 }
 
-// EditTask opens the task for editing
+// CreateEditCommand creates an exec.Cmd for editing a task
+// This is designed to work with tea.ExecProcess for proper terminal handling
+func CreateEditCommand(uuid string) *exec.Cmd {
+	cmd := exec.Command("task", "rc.confirmation:no", "rc.verbose:nothing", uuid, "edit")
+	return cmd
+}
+
+// EditTask opens the task for editing (legacy function for non-Bubble Tea contexts)
 func EditTask(uuid string) error {
 	cmd := exec.Command("task", "rc.confirmation:no", "rc.verbose:nothing", uuid, "edit")
 	cmd.Stdin = os.Stdin
