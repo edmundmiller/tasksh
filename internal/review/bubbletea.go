@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -52,13 +53,14 @@ type ReviewModel struct {
 	reviewed    int      // Number reviewed
 
 	// UI components
-	viewport   viewport.Model
-	help       help.Model
-	textInput  textinput.Model
-	calendar   CalendarModel
-	completion *CompletionModel
-	confetti   tea.Model
-	keys       KeyMap
+	viewport    viewport.Model
+	help        help.Model
+	textInput   textinput.Model
+	calendar    CalendarModel
+	completion  *CompletionModel
+	confetti    tea.Model
+	progressBar progress.Model
+	keys        KeyMap
 
 	// Application state
 	mode     ReviewMode
@@ -321,6 +323,11 @@ func NewReviewModel() *ReviewModel {
 	promptSpinner.Spinner = spinner.Points
 	promptSpinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // Yellow for prompt
 
+	// Create progress bar
+	progressBar := progress.New(
+		progress.WithSolidFill("6"), // ANSI cyan
+	)
+
 	model := &ReviewModel{
 		viewport:      vp,
 		help:          h,
@@ -328,6 +335,7 @@ func NewReviewModel() *ReviewModel {
 		calendar:      cal,
 		completion:    completion,
 		confetti:      confettiModel,
+		progressBar:   progressBar,
 		keys:          DefaultKeyMap(),
 		mode:          ModeViewing,
 		aiAnalyzer:    aiAnalyzer,
@@ -501,10 +509,14 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.message = msg.message
 		m.reviewed++
 		
+		// Update progress bar based on tasks reviewed (not current position)
+		progress := float64(m.reviewed) / float64(len(m.tasks))
+		progressCmd := m.progressBar.SetPercent(progress)
+		
 		// Move to next task if not at the end
 		if m.current < len(m.tasks)-1 {
 			m.current++
-			return m, m.loadCurrentTask()
+			return m, tea.Batch(m.loadCurrentTask(), progressCmd)
 		} else {
 			// Review complete - start celebration!
 			m.mode = ModeCelebrating
@@ -519,12 +531,13 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				time.Sleep(3 * time.Second) // Show confetti for 3 seconds
 				return celebrationCompleteMsg{}
 			}
-			return m, tea.Batch(confettiCmd, tea.Cmd(sizeCmd), tea.Cmd(celebrationCmd))
+			return m, tea.Batch(confettiCmd, tea.Cmd(sizeCmd), tea.Cmd(celebrationCmd), progressCmd)
 		}
 
 	case taskSkippedMsg:
 		m.message = msg.message
 		// Don't increment reviewed count for skipped tasks
+		// Progress bar stays the same since no progress was made
 		
 		// Move to next task if not at the end
 		if m.current < len(m.tasks)-1 {
@@ -604,6 +617,13 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport, cmd = m.viewport.Update(msg)
 		cmds = append(cmds, cmd)
 	}
+
+	// Always update progress bar for animations
+	progressModel, progressCmd := m.progressBar.Update(msg)
+	if pm, ok := progressModel.(progress.Model); ok {
+		m.progressBar = pm
+	}
+	cmds = append(cmds, progressCmd)
 
 	return m, tea.Batch(cmds...)
 }
@@ -896,6 +916,12 @@ func (m *ReviewModel) View() string {
 		sections = append(sections, messageStyle.Render(m.message))
 	}
 
+	// Progress bar (show above help, only in relevant modes)
+	if m.mode == ModeViewing || m.mode == ModeWaiting {
+		progressSection := m.renderProgressBar()
+		sections = append(sections, progressSection)
+	}
+
 	// Help (conditional AI features)
 	conditionalKeys := ConditionalKeyMap{keyMap: m.keys, aiAvailable: m.aiAvailable}
 	sections = append(sections, m.help.View(conditionalKeys))
@@ -922,6 +948,33 @@ func (m *ReviewModel) renderStatusBar() string {
 
 	left := progress + " " + taskTitle
 	return statusStyle.Render(left)
+}
+
+// renderProgressBar renders the progress bar section
+func (m *ReviewModel) renderProgressBar() string {
+	// Make progress bar responsive to terminal width (max 60, min 20)
+	barWidth := m.width - 20 // Leave room for label and padding
+	if barWidth > 60 {
+		barWidth = 60
+	}
+	if barWidth < 20 {
+		barWidth = 20
+	}
+	
+	// Update progress bar width
+	m.progressBar.Width = barWidth
+
+	progressStyle := lipgloss.NewStyle().
+		Padding(0, 1).
+		Margin(0, 0, 1, 0)
+
+	// Add a subtle label
+	label := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8")). // Gray
+		Render("Review Progress: ")
+
+	content := label + m.progressBar.View()
+	return progressStyle.Render(content)
 }
 
 // renderConfirmation renders delete confirmation dialog
@@ -1219,6 +1272,9 @@ func (m *ReviewModel) SetTasks(tasks []string, total int) {
 	m.total = total
 	m.current = 0
 	m.reviewed = 0
+	
+	// Initialize progress bar at 0%
+	m.progressBar.SetPercent(0.0)
 }
 
 // updateContextSelect handles context selection input
