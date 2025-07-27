@@ -87,6 +87,44 @@ func (ai *Analyzer) AnalyzeTask(task *taskwarrior.Task) (*TaskAnalysis, error) {
 	return ai.parseAnalysisResponse(task.UUID, resp.Choices[0].Message.Content)
 }
 
+// GenerateCommands uses AI to convert a natural language prompt into taskwarrior/timewarrior commands
+func (ai *Analyzer) GenerateCommands(task *taskwarrior.Task, prompt string) ([]string, string, error) {
+	if err := CheckOpenAIAvailable(); err != nil {
+		return nil, "", err
+	}
+
+	// Get API key
+	apiKey := ai.getOpenAIAPIKey()
+	if apiKey == "" {
+		return nil, "", fmt.Errorf("OpenAI API key not available")
+	}
+
+	// Build the agent prompt
+	agentPrompt := ai.buildAgentPrompt(task, prompt)
+
+	// Create OpenAI client
+	client := openai.NewClient(option.WithAPIKey(apiKey))
+
+	// Call OpenAI API
+	ctx := context.Background()
+	resp, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.UserMessage(agentPrompt),
+		},
+		Model: openai.ChatModelGPT4o,
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("OpenAI API call failed: %w", err)
+	}
+
+	if len(resp.Choices) == 0 {
+		return nil, "", fmt.Errorf("no response from OpenAI API")
+	}
+
+	// Parse the commands response
+	return ai.parseCommandsResponse(resp.Choices[0].Message.Content)
+}
+
 // buildAnalysisPrompt creates a structured prompt for task analysis
 func (ai *Analyzer) buildAnalysisPrompt(task *taskwarrior.Task, estimate float64, estimateReason string, similar []timedb.TimeEntry) string {
 	var prompt strings.Builder
@@ -171,6 +209,100 @@ func (ai *Analyzer) getOpenAIAPIKey() string {
 	}
 	
 	return ""
+}
+
+// buildAgentPrompt creates a prompt for the command generation agent
+func (ai *Analyzer) buildAgentPrompt(task *taskwarrior.Task, userPrompt string) string {
+	var prompt strings.Builder
+	
+	prompt.WriteString("# Taskwarrior/Timewarrior Command Agent\n\n")
+	prompt.WriteString("You are an expert assistant that converts natural language requests into taskwarrior and timewarrior commands.\n\n")
+	
+	// Current task context
+	prompt.WriteString("## Current Task\n")
+	prompt.WriteString(fmt.Sprintf("- **UUID**: %s\n", task.UUID))
+	prompt.WriteString(fmt.Sprintf("- **Description**: %s\n", task.Description))
+	prompt.WriteString(fmt.Sprintf("- **Project**: %s\n", getValueOrEmpty(task.Project)))
+	prompt.WriteString(fmt.Sprintf("- **Priority**: %s\n", getValueOrEmpty(task.Priority)))
+	prompt.WriteString(fmt.Sprintf("- **Status**: %s\n", task.Status))
+	if task.Due != "" {
+		prompt.WriteString(fmt.Sprintf("- **Due**: %s\n", task.Due))
+	}
+	prompt.WriteString("\n")
+	
+	// User request
+	prompt.WriteString("## User Request\n")
+	prompt.WriteString(fmt.Sprintf("\"%s\"\n\n", userPrompt))
+	
+	// Instructions
+	prompt.WriteString("## Instructions\n")
+	prompt.WriteString("Convert the user's request into appropriate taskwarrior and/or timewarrior commands.\n\n")
+	
+	prompt.WriteString("**Available Commands:**\n")
+	prompt.WriteString("- `task <uuid> done` - Mark task as completed\n")
+	prompt.WriteString("- `task <uuid> modify <changes>` - Modify task attributes\n")
+	prompt.WriteString("- `task <uuid> start` - Start tracking time for this task\n")
+	prompt.WriteString("- `task <uuid> stop` - Stop tracking time for this task\n")
+	prompt.WriteString("- `task <uuid> delete` - Delete the task\n")
+	prompt.WriteString("- `timew start <description>` - Start time tracking\n")
+	prompt.WriteString("- `timew stop` - Stop time tracking\n")
+	prompt.WriteString("- `timew summary` - Show time summary\n")
+	prompt.WriteString("- `timew track <start> - <end> <description>` - Log time retroactively\n\n")
+	
+	prompt.WriteString("**Response Format:**\n")
+	prompt.WriteString("Provide your response in this JSON format:\n\n")
+	prompt.WriteString("```json\n")
+	prompt.WriteString("{\n")
+	prompt.WriteString("  \"commands\": [\n")
+	prompt.WriteString("    \"task <uuid> done\",\n")
+	prompt.WriteString("    \"timew track 2h ago - now 'Working on task'\"\n")
+	prompt.WriteString("  ],\n")
+	prompt.WriteString("  \"explanation\": \"This will mark the task as complete and log 2 hours of work time.\",\n")
+	prompt.WriteString("  \"safety_note\": \"These commands will modify your task and time data. Review carefully before executing.\"\n")
+	prompt.WriteString("}\n")
+	prompt.WriteString("```\n\n")
+	
+	prompt.WriteString("**Important Notes:**\n")
+	prompt.WriteString("- Use the exact task UUID provided\n")
+	prompt.WriteString("- Be conservative with destructive actions\n")
+	prompt.WriteString("- If the request is unclear, ask for clarification in the explanation\n")
+	prompt.WriteString("- Always provide clear explanations of what each command does\n")
+	
+	return prompt.String()
+}
+
+// parseCommandsResponse parses the AI response for command generation
+func (ai *Analyzer) parseCommandsResponse(response string) ([]string, string, error) {
+	// Extract JSON from response (it might be wrapped in markdown)
+	jsonStart := strings.Index(response, "{")
+	jsonEnd := strings.LastIndex(response, "}")
+	
+	if jsonStart == -1 || jsonEnd == -1 {
+		return nil, "", fmt.Errorf("no JSON found in response")
+	}
+	
+	jsonStr := response[jsonStart : jsonEnd+1]
+	
+	var result struct {
+		Commands    []string `json:"commands"`
+		Explanation string   `json:"explanation"`
+		SafetyNote  string   `json:"safety_note"`
+	}
+	
+	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+		return nil, "", fmt.Errorf("failed to parse AI response: %w", err)
+	}
+	
+	// Build preview text
+	preview := fmt.Sprintf("**Explanation:** %s\n\n**Commands to execute:**\n", result.Explanation)
+	for i, cmd := range result.Commands {
+		preview += fmt.Sprintf("%d. `%s`\n", i+1, cmd)
+	}
+	if result.SafetyNote != "" {
+		preview += fmt.Sprintf("\n**⚠️  %s**", result.SafetyNote)
+	}
+	
+	return result.Commands, preview, nil
 }
 
 // parseAnalysisResponse parses the AI response into structured data

@@ -17,6 +17,7 @@ func ShowHelp() {
 	fmt.Println("  - Edit task (opens task editor)")
 	fmt.Println("  - Modify task (with smart completion for projects/tags/priorities)")
 	fmt.Println("  - AI Analysis (get OpenAI-powered suggestions for improvements)")
+	fmt.Println("  - Prompt Agent (tell AI what to do with natural language)")
 	fmt.Println("  - Complete task (with optional time tracking)")
 	fmt.Println("  - Delete task")
 	fmt.Println("  - Wait task (set waiting status with date and reason)")

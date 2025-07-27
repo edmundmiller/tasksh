@@ -2,6 +2,7 @@ package review
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -37,6 +38,8 @@ const (
 	ModeContextSelect
 	ModeAIAnalysis
 	ModeAILoading
+	ModePromptAgent
+	ModePromptPreview
 )
 
 // ReviewModel represents the state of the Bubble Tea review interface
@@ -86,6 +89,11 @@ type ReviewModel struct {
 	aiAnalyzer      *ai.Analyzer
 	currentAnalysis *ai.TaskAnalysis
 	aiSpinner       spinner.Model
+	
+	// Prompt agent state
+	promptSpinner    spinner.Model
+	generatedCommands []string
+	commandPreview   string
 }
 
 // KeyMap defines the key bindings for the review interface
@@ -105,6 +113,7 @@ type KeyMap struct {
 	Skip     key.Binding
 	Context  key.Binding
 	AIAnalysis key.Binding
+	PromptAgent key.Binding
 	
 	// General
 	Help key.Binding
@@ -172,6 +181,10 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("a"),
 			key.WithHelp("a", "AI analysis"),
 		),
+		PromptAgent: key.NewBinding(
+			key.WithKeys("p"),
+			key.WithHelp("p", "prompt agent"),
+		),
 		
 		// General
 		Help: key.NewBinding(
@@ -203,7 +216,7 @@ func DefaultKeyMap() KeyMap {
 
 // ShortHelp returns the short help text
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Review, k.Edit, k.Modify, k.Complete, k.Delete, k.Wait, k.Due, k.Skip, k.Context, k.AIAnalysis, k.Help, k.Quit}
+	return []key.Binding{k.Review, k.Edit, k.Modify, k.Complete, k.Delete, k.Wait, k.Due, k.Skip, k.Context, k.AIAnalysis, k.PromptAgent, k.Help, k.Quit}
 }
 
 // FullHelp returns the full help text
@@ -212,7 +225,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.NextTask, k.PrevTask},
 		{k.Review, k.Edit, k.Modify},
 		{k.Complete, k.Delete, k.Wait, k.Due, k.Skip},
-		{k.Context, k.AIAnalysis, k.Help, k.Quit},
+		{k.Context, k.AIAnalysis, k.PromptAgent, k.Help, k.Quit},
 	}
 }
 
@@ -265,17 +278,23 @@ func NewReviewModel() *ReviewModel {
 	aiSpinner.Spinner = spinner.Dot
 	aiSpinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("5")) // Magenta for AI
 
+	// Create prompt agent spinner
+	promptSpinner := spinner.New()
+	promptSpinner.Spinner = spinner.Points
+	promptSpinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // Yellow for prompt
+
 	model := &ReviewModel{
-		viewport:   vp,
-		help:       h,
-		textInput:  ti,
-		calendar:   cal,
-		completion: completion,
-		confetti:   confettiModel,
-		keys:       DefaultKeyMap(),
-		mode:       ModeViewing,
-		aiAnalyzer: aiAnalyzer,
-		aiSpinner:  aiSpinner,
+		viewport:      vp,
+		help:          h,
+		textInput:     ti,
+		calendar:      cal,
+		completion:    completion,
+		confetti:      confettiModel,
+		keys:          DefaultKeyMap(),
+		mode:          ModeViewing,
+		aiAnalyzer:    aiAnalyzer,
+		aiSpinner:     aiSpinner,
+		promptSpinner: promptSpinner,
 	}
 
 	// Initialize current context
@@ -343,6 +362,10 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateAIAnalysis(msg)
 		case ModeAILoading:
 			return m.updateAILoading(msg)
+		case ModePromptAgent:
+			return m.updatePromptAgent(msg)
+		case ModePromptPreview:
+			return m.updatePromptPreview(msg)
 		}
 		
 		switch {
@@ -416,6 +439,18 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(tickCmd, m.analyzeCurrentTask())
 			} else {
 				m.message = "AI analysis not available (OpenAI API key or timedb unavailable)"
+			}
+			
+		case key.Matches(msg, m.keys.PromptAgent):
+			if m.aiAnalyzer != nil {
+				m.mode = ModePromptAgent
+				m.textInput.Placeholder = "Tell me what you want to do with this task (e.g., 'complete this task and log 2 hours', 'start timing this task')"
+				m.textInput.SetValue("")
+				m.textInput.Focus()
+				m.message = "Prompt Agent - Tell me what to do:"
+				m.modeJustChanged = true
+			} else {
+				m.message = "Prompt agent not available (OpenAI API key unavailable)"
 			}
 		}
 
@@ -497,10 +532,20 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentAnalysis = msg.analysis
 		m.mode = ModeAIAnalysis
 		m.message = "AI analysis complete (ESC to return to task view)"
+		
+	case promptCommandsGeneratedMsg:
+		m.generatedCommands = msg.commands
+		m.commandPreview = msg.preview
+		m.mode = ModePromptPreview
+		m.message = "Commands generated - Review and confirm (y/n):"
+		
+	case promptCommandsExecutedMsg:
+		m.mode = ModeViewing
+		m.message = fmt.Sprintf("Commands executed: %s", msg.result)
 	}
 
 	// Update components based on mode
-	if m.mode == ModeInputModification || m.mode == ModeInputWaitDate || m.mode == ModeInputWaitReason || m.mode == ModeInputDueDate {
+	if m.mode == ModeInputModification || m.mode == ModeInputWaitDate || m.mode == ModeInputWaitReason || m.mode == ModeInputDueDate || m.mode == ModePromptAgent {
 		// Don't process the triggering key if mode just changed
 		if !m.modeJustChanged {
 			m.textInput, cmd = m.textInput.Update(msg)
@@ -793,6 +838,10 @@ func (m *ReviewModel) View() string {
 		sections = append(sections, m.renderAIAnalysis())
 	} else if m.mode == ModeAILoading {
 		sections = append(sections, m.renderAILoading())
+	} else if m.mode == ModePromptAgent {
+		sections = append(sections, m.renderPromptAgent())
+	} else if m.mode == ModePromptPreview {
+		sections = append(sections, m.renderPromptPreview())
 	} else if m.mode == ModeCelebrating {
 		sections = append(sections, m.confetti.View())
 	} else {
@@ -1019,6 +1068,15 @@ type contextChangedMsg struct {
 
 type aiAnalysisCompleteMsg struct {
 	analysis *ai.TaskAnalysis
+}
+
+type promptCommandsGeneratedMsg struct {
+	commands []string
+	preview  string
+}
+
+type promptCommandsExecutedMsg struct {
+	result string
 }
 
 // Commands for async operations
@@ -1399,4 +1457,197 @@ func (m *ReviewModel) renderAILoading() string {
 		Render("Press ESC to cancel"))
 	
 	return loadingStyle.Render(content.String())
+}
+
+// generatePromptCommands converts user prompt to taskwarrior commands
+func (m *ReviewModel) generatePromptCommands(prompt string) tea.Cmd {
+	return func() tea.Msg {
+		if m.currentTask == nil {
+			return errorMsg{fmt.Errorf("no current task to work with")}
+		}
+		
+		commands, preview, err := m.aiAnalyzer.GenerateCommands(m.currentTask, prompt)
+		if err != nil {
+			return errorMsg{fmt.Errorf("command generation failed: %w", err)}
+		}
+		
+		return promptCommandsGeneratedMsg{
+			commands: commands,
+			preview:  preview,
+		}
+	}
+}
+
+// executePromptCommands executes the generated commands
+func (m *ReviewModel) executePromptCommands() tea.Cmd {
+	return func() tea.Msg {
+		results := []string{}
+		errors := []string{}
+		
+		for _, cmdStr := range m.generatedCommands {
+			// Parse the command to determine if it's taskwarrior or timewarrior
+			parts := strings.Fields(cmdStr)
+			if len(parts) == 0 {
+				continue
+			}
+			
+			var err error
+			switch parts[0] {
+			case "task":
+				// Execute taskwarrior command
+				err = m.executeTaskCommand(parts[1:])
+				if err == nil {
+					results = append(results, fmt.Sprintf("✓ task %s", strings.Join(parts[1:], " ")))
+				} else {
+					errors = append(errors, fmt.Sprintf("✗ task %s: %v", strings.Join(parts[1:], " "), err))
+				}
+				
+			case "timew":
+				// Execute timewarrior command  
+				err = m.executeTimewCommand(parts[1:])
+				if err == nil {
+					results = append(results, fmt.Sprintf("✓ timew %s", strings.Join(parts[1:], " ")))
+				} else {
+					errors = append(errors, fmt.Sprintf("✗ timew %s: %v", strings.Join(parts[1:], " "), err))
+				}
+				
+			default:
+				errors = append(errors, fmt.Sprintf("✗ Unknown command: %s", parts[0]))
+			}
+		}
+		
+		// Combine results and errors
+		allResults := append(results, errors...)
+		return promptCommandsExecutedMsg{
+			result: strings.Join(allResults, "; "),
+		}
+	}
+}
+
+// executeTaskCommand executes a taskwarrior command safely
+func (m *ReviewModel) executeTaskCommand(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("no task command specified")
+	}
+	
+	// Build the command
+	cmd := exec.Command("task", args...)
+	
+	// Execute the command
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("task command failed: %s", string(output))
+	}
+	
+	return nil
+}
+
+// executeTimewCommand executes a timewarrior command safely  
+func (m *ReviewModel) executeTimewCommand(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("no timew command specified")
+	}
+	
+	// Build the command
+	cmd := exec.Command("timew", args...)
+	
+	// Execute the command
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("timew command failed: %s", string(output))
+	}
+	
+	return nil
+}
+
+// updatePromptAgent handles prompt agent input mode
+func (m *ReviewModel) updatePromptAgent(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	
+	switch msg.Type {
+	case tea.KeyEnter:
+		prompt := strings.TrimSpace(m.textInput.Value())
+		if prompt == "" {
+			m.mode = ModeViewing
+			m.message = ""
+			return m, nil
+		}
+		
+		// Start generating commands with loading
+		m.mode = ModeAILoading
+		m.message = "Generating commands..."
+		tickCmd := func() tea.Msg {
+			return m.promptSpinner.Tick()
+		}
+		return m, tea.Batch(tickCmd, m.generatePromptCommands(prompt))
+		
+	case tea.KeyEscape:
+		m.mode = ModeViewing
+		m.message = ""
+		return m, nil
+	}
+	
+	// Update the text input with the keystroke
+	m.textInput, cmd = m.textInput.Update(msg)
+	return m, cmd
+}
+
+// updatePromptPreview handles command preview and confirmation
+func (m *ReviewModel) updatePromptPreview(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Confirm) || msg.String() == "y":
+		m.mode = ModeViewing
+		m.message = ""
+		return m, m.executePromptCommands()
+		
+	case key.Matches(msg, m.keys.Cancel) || msg.String() == "n":
+		m.mode = ModeViewing
+		m.message = "Command execution cancelled"
+		m.generatedCommands = nil
+		m.commandPreview = ""
+		return m, nil
+	}
+	
+	return m, nil
+}
+
+// renderPromptAgent renders the prompt input interface
+func (m *ReviewModel) renderPromptAgent() string {
+	return m.renderInput() // Reuse the existing input renderer
+}
+
+// renderPromptPreview renders the command preview interface
+func (m *ReviewModel) renderPromptPreview() string {
+	previewStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("3")). // ANSI yellow for prompt
+		Padding(1, 2).
+		Margin(2, 4)
+
+	var content strings.Builder
+	
+	// Title
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(lipgloss.Color("3")).
+		Bold(true).
+		Render("🤖 Prompt Agent - Command Preview"))
+	content.WriteString("\n\n")
+	
+	// Preview content
+	content.WriteString(m.commandPreview)
+	content.WriteString("\n\n")
+	
+	// Confirmation prompt
+	content.WriteString(lipgloss.NewStyle().
+		Bold(true).
+		Render("Execute these commands? "))
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(lipgloss.Color("2")).
+		Render("(y)"))
+	content.WriteString(" / ")
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(lipgloss.Color("1")).
+		Render("(n)"))
+	
+	return previewStyle.Render(content.String())
 }
