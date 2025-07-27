@@ -736,6 +736,12 @@ func (m *ReviewModel) updateWaitDateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.message = ""
 			return m, nil
 		}
+		// Handle "none" to remove wait date
+		if strings.ToLower(waitDate) == "none" {
+			m.mode = ModeViewing
+			m.message = ""
+			return m, m.removeWaitCurrentTask()
+		}
 		m.waitDate = waitDate
 		m.mode = ModeInputWaitReason
 		m.textInput.Placeholder = "Enter wait reason (optional)"
@@ -789,9 +795,9 @@ func (m *ReviewModel) updateWaitCalendar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Switch to text input mode
 		m.mode = ModeInputWaitDate
 		m.calendar.SetFocused(false)
-		m.textInput.Placeholder = "Enter wait date (e.g., tomorrow, next week, 2024-12-25)"
+		m.textInput.Placeholder = "Enter wait date (e.g., tomorrow, next week, 2024-12-25, 'none' to remove)"
 		m.textInput.SetValue("")
-		m.message = "Enter wait date (Tab to toggle calendar):"
+		m.message = "Enter wait date (Tab: calendar, 'none': remove wait):"
 		return m, nil
 		
 	case key.Matches(msg, m.keys.Cancel):
@@ -832,9 +838,9 @@ func (m *ReviewModel) updateDueCalendar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Switch to text input mode
 		m.mode = ModeInputDueDate
 		m.calendar.SetFocused(false)
-		m.textInput.Placeholder = "Enter due date (e.g., tomorrow, next week, 2024-12-25)"
+		m.textInput.Placeholder = "Enter due date (e.g., tomorrow, next week, 2024-12-25, 'none' to remove)"
 		m.textInput.SetValue("")
-		m.message = "Enter due date (Tab to toggle calendar):"
+		m.message = "Enter due date (Tab: calendar, 'none': remove due):"
 		return m, nil
 		
 	case key.Matches(msg, m.keys.Cancel):
@@ -876,6 +882,12 @@ func (m *ReviewModel) updateDueDateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.mode = ModeViewing
 			m.message = ""
 			return m, nil
+		}
+		// Handle "none" to remove due date
+		if strings.ToLower(dueDate) == "none" {
+			m.mode = ModeViewing
+			m.message = ""
+			return m, m.removeDueCurrentTask()
 		}
 		m.mode = ModeViewing
 		m.message = ""
