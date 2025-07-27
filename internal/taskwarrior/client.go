@@ -210,6 +210,23 @@ func SetDueDate(uuid, dueDate string) error {
 	return nil
 }
 
+// RemoveDueDate removes the due date from a task
+func RemoveDueDate(uuid string) error {
+	if _, err := executeTask("rc.confirmation:no", "rc.verbose:nothing", uuid, "modify", "due:"); err != nil {
+		return fmt.Errorf("failed to remove due date: %w", err)
+	}
+	return nil
+}
+
+// RemoveWaitDate removes the wait date from a task
+func RemoveWaitDate(uuid string) error {
+	args := []string{"rc.confirmation:no", "rc.verbose:nothing", uuid, "modify", "wait:", "-waiting"}
+	if _, err := executeTask(args...); err != nil {
+		return fmt.Errorf("failed to remove wait date: %w", err)
+	}
+	return nil
+}
+
 // GetContexts returns a list of available contexts
 func GetContexts() ([]string, error) {
 	output, err := executeTask("context")

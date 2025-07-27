@@ -462,12 +462,12 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Wait):
 			m.mode = ModeWaitCalendar
 			m.calendar.SetFocused(true)
-			m.message = "Select wait date (Tab to toggle text input):"
+			m.message = "Select wait date (Tab: text input, x: remove wait, ESC: cancel):"
 
 		case key.Matches(msg, m.keys.Due):
 			m.mode = ModeDueCalendar
 			m.calendar.SetFocused(true)
-			m.message = "Select due date (Tab to toggle text input):"
+			m.message = "Select due date (Tab: text input, x: remove due, ESC: cancel):"
 
 		case key.Matches(msg, m.keys.Skip):
 			return m, m.skipCurrentTask()
@@ -738,7 +738,7 @@ func (m *ReviewModel) updateWaitDateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Switch back to calendar mode
 		m.mode = ModeWaitCalendar
 		m.calendar.SetFocused(true)
-		m.message = "Select wait date (Tab to toggle text input):"
+		m.message = "Select wait date (Tab: text input, x: remove wait, ESC: cancel):"
 		return m, nil
 	}
 	
@@ -797,6 +797,13 @@ func (m *ReviewModel) updateWaitCalendar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.textInput.SetValue("")
 		m.message = "Enter wait reason (optional):"
 		return m, nil
+		
+	case msg.String() == "x":
+		// Remove wait date
+		m.mode = ModeViewing
+		m.calendar.SetFocused(false)
+		m.message = ""
+		return m, m.removeWaitCurrentTask()
 	}
 	
 	// Forward unhandled keys to calendar for navigation
@@ -830,6 +837,13 @@ func (m *ReviewModel) updateDueCalendar(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.calendar.SetFocused(false)
 		m.message = ""
 		return m, m.dueCurrentTask(dueDate)
+		
+	case msg.String() == "x":
+		// Remove due date
+		m.mode = ModeViewing
+		m.calendar.SetFocused(false)
+		m.message = ""
+		return m, m.removeDueCurrentTask()
 	}
 	
 	// Forward unhandled keys to calendar for navigation
@@ -863,7 +877,7 @@ func (m *ReviewModel) updateDueDateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Switch back to calendar mode
 		m.mode = ModeDueCalendar
 		m.calendar.SetFocused(true)
-		m.message = "Select due date (Tab to toggle text input):"
+		m.message = "Select due date (Tab: text input, x: remove due, ESC: cancel):"
 		return m, nil
 	}
 	
@@ -1262,6 +1276,26 @@ func (m *ReviewModel) dueCurrentTask(dueDate string) tea.Cmd {
 			return errorMsg{err}
 		}
 		message := fmt.Sprintf("Task due date set to %s.", dueDate)
+		return actionCompletedMsg{message: message}
+	}
+}
+
+func (m *ReviewModel) removeDueCurrentTask() tea.Cmd {
+	return func() tea.Msg {
+		if err := taskwarrior.RemoveDueDate(m.tasks[m.current]); err != nil {
+			return errorMsg{err}
+		}
+		message := "Task due date removed."
+		return actionCompletedMsg{message: message}
+	}
+}
+
+func (m *ReviewModel) removeWaitCurrentTask() tea.Cmd {
+	return func() tea.Msg {
+		if err := taskwarrior.RemoveWaitDate(m.tasks[m.current]); err != nil {
+			return errorMsg{err}
+		}
+		message := "Task wait date removed."
 		return actionCompletedMsg{message: message}
 	}
 }
