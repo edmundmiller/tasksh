@@ -22,10 +22,10 @@ func ShowDiagnostics() {
 		fmt.Println("Taskwarrior: Available")
 	}
 	
-	// Check if mods command is available
-	if err := ai.CheckModsAvailable(); err != nil {
-		fmt.Printf("Mods (AI): NOT FOUND - %v\n", err)
-		fmt.Println("  Install mods for AI-assisted task analysis: https://github.com/charmbracelet/mods")
+	// Check if OpenAI API is available  
+	if err := ai.CheckOpenAIAvailable(); err != nil {
+		fmt.Printf("Mods (AI): NOT AVAILABLE - %v\n", err)
+		fmt.Println("  Set OPENAI_API_KEY environment variable or use: export OPENAI_API_KEY=$(op read \"op://Private/api.openai.com/apikey\")")
 	} else {
 		fmt.Println("Mods (AI): Available")
 	}

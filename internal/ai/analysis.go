@@ -1,11 +1,15 @@
 package ai
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 
 	"github.com/emiller/tasksh/internal/taskwarrior"
 	"github.com/emiller/tasksh/internal/timedb"
@@ -41,9 +45,9 @@ func NewAnalyzer(timeDB *timedb.TimeDB) *Analyzer {
 	return &Analyzer{timeDB: timeDB}
 }
 
-// AnalyzeTask performs AI analysis of a task using mods
+// AnalyzeTask performs AI analysis of a task using OpenAI API
 func (ai *Analyzer) AnalyzeTask(task *taskwarrior.Task) (*TaskAnalysis, error) {
-	if err := CheckModsAvailable(); err != nil {
+	if err := CheckOpenAIAvailable(); err != nil {
 		return nil, err
 	}
 
@@ -54,19 +58,33 @@ func (ai *Analyzer) AnalyzeTask(task *taskwarrior.Task) (*TaskAnalysis, error) {
 	// Build the prompt
 	prompt := ai.buildAnalysisPrompt(task, estimate, estimateReason, similar)
 
-	// Call mods
-	cmd := exec.Command("mods", "--no-limit")
-	cmd.Stdin = strings.NewReader(prompt)
-	
-	var output bytes.Buffer
-	cmd.Stdout = &output
-	
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("mods execution failed: %w", err)
+	// Get API key
+	apiKey := ai.getOpenAIAPIKey()
+	if apiKey == "" {
+		return nil, fmt.Errorf("OpenAI API key not available")
+	}
+
+	// Create OpenAI client
+	client := openai.NewClient(option.WithAPIKey(apiKey))
+
+	// Call OpenAI API
+	ctx := context.Background()
+	resp, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.UserMessage(prompt),
+		},
+		Model: openai.ChatModelGPT4o,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("OpenAI API call failed: %w", err)
+	}
+
+	if len(resp.Choices) == 0 {
+		return nil, fmt.Errorf("no response from OpenAI API")
 	}
 
 	// Parse the response
-	return ai.parseAnalysisResponse(task.UUID, output.String())
+	return ai.parseAnalysisResponse(task.UUID, resp.Choices[0].Message.Content)
 }
 
 // buildAnalysisPrompt creates a structured prompt for task analysis
@@ -127,6 +145,32 @@ func (ai *Analyzer) buildAnalysisPrompt(task *taskwarrior.Task, estimate float64
 	prompt.WriteString("Focus on practical improvements that will help with task completion and organization.")
 	
 	return prompt.String()
+}
+
+// getOpenAIAPIKey retrieves the OpenAI API key from environment or command
+func (ai *Analyzer) getOpenAIAPIKey() string {
+	// First try direct environment variable
+	if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
+		return apiKey
+	}
+	
+	// Try the 1Password CLI command as mentioned in user instructions  
+	if cmdStr := os.Getenv("OPENAI_API_KEY_CMD"); cmdStr != "" {
+		// For the example command: $(op read "op://Private/api.openai.com/apikey")
+		// We'll execute the command and return its output
+		cmd := exec.Command("sh", "-c", cmdStr)
+		if output, err := cmd.Output(); err == nil {
+			return strings.TrimSpace(string(output))
+		}
+	}
+	
+	// Try the specific 1Password command mentioned by the user
+	cmd := exec.Command("op", "read", "op://Private/api.openai.com/apikey")
+	if output, err := cmd.Output(); err == nil {
+		return strings.TrimSpace(string(output))
+	}
+	
+	return ""
 }
 
 // parseAnalysisResponse parses the AI response into structured data

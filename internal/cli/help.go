@@ -16,7 +16,7 @@ func ShowHelp() {
 	fmt.Println("During review, you can:")
 	fmt.Println("  - Edit task (opens task editor)")
 	fmt.Println("  - Modify task (with smart completion for projects/tags/priorities)")
-	fmt.Println("  - AI Analysis (get AI suggestions for improvements)")
+	fmt.Println("  - AI Analysis (get OpenAI-powered suggestions for improvements)")
 	fmt.Println("  - Complete task (with optional time tracking)")
 	fmt.Println("  - Delete task")
 	fmt.Println("  - Wait task (set waiting status with date and reason)")

@@ -13,7 +13,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/maaslalani/confetty/confetti"
 
+	"github.com/emiller/tasksh/internal/ai"
 	"github.com/emiller/tasksh/internal/taskwarrior"
+	"github.com/emiller/tasksh/internal/timedb"
 )
 
 // ReviewMode represents the current mode of the review interface
@@ -32,6 +34,7 @@ const (
 	ModeInputDueDate
 	ModeCelebrating
 	ModeContextSelect
+	ModeAIAnalysis
 )
 
 // ReviewModel represents the state of the Bubble Tea review interface
@@ -76,6 +79,10 @@ type ReviewModel struct {
 	contexts          []string
 	selectedContext   int
 	currentContext    string
+	
+	// AI analysis state
+	aiAnalyzer   *ai.Analyzer
+	currentAnalysis *ai.TaskAnalysis
 }
 
 // KeyMap defines the key bindings for the review interface
@@ -94,6 +101,7 @@ type KeyMap struct {
 	Due      key.Binding
 	Skip     key.Binding
 	Context  key.Binding
+	AIAnalysis key.Binding
 	
 	// General
 	Help key.Binding
@@ -157,6 +165,10 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("x"),
 			key.WithHelp("x", "switch context"),
 		),
+		AIAnalysis: key.NewBinding(
+			key.WithKeys("a"),
+			key.WithHelp("a", "AI analysis"),
+		),
 		
 		// General
 		Help: key.NewBinding(
@@ -188,7 +200,7 @@ func DefaultKeyMap() KeyMap {
 
 // ShortHelp returns the short help text
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Review, k.Edit, k.Modify, k.Complete, k.Delete, k.Wait, k.Due, k.Skip, k.Context, k.Help, k.Quit}
+	return []key.Binding{k.Review, k.Edit, k.Modify, k.Complete, k.Delete, k.Wait, k.Due, k.Skip, k.Context, k.AIAnalysis, k.Help, k.Quit}
 }
 
 // FullHelp returns the full help text
@@ -197,7 +209,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.NextTask, k.PrevTask},
 		{k.Review, k.Edit, k.Modify},
 		{k.Complete, k.Delete, k.Wait, k.Due, k.Skip},
-		{k.Context, k.Help, k.Quit},
+		{k.Context, k.AIAnalysis, k.Help, k.Quit},
 	}
 }
 
@@ -237,6 +249,14 @@ func NewReviewModel() *ReviewModel {
 	// Create confetti model
 	confettiModel := confetti.InitialModel()
 
+	// Create AI analyzer
+	var aiAnalyzer *ai.Analyzer
+	if timeDB, err := timedb.New(); err == nil {
+		aiAnalyzer = ai.NewAnalyzer(timeDB)
+		// Note: TimeDB will be closed when the model is cleaned up
+		// For now, we'll leave it open during the review session
+	}
+
 	model := &ReviewModel{
 		viewport:   vp,
 		help:       h,
@@ -246,6 +266,7 @@ func NewReviewModel() *ReviewModel {
 		confetti:   confettiModel,
 		keys:       DefaultKeyMap(),
 		mode:       ModeViewing,
+		aiAnalyzer: aiAnalyzer,
 	}
 
 	// Initialize current context
@@ -309,6 +330,8 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDueDateInput(msg)
 		case ModeContextSelect:
 			return m.updateContextSelect(msg)
+		case ModeAIAnalysis:
+			return m.updateAIAnalysis(msg)
 		}
 		
 		switch {
@@ -370,6 +393,13 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.Context):
 			return m, m.initContextSelect()
+			
+		case key.Matches(msg, m.keys.AIAnalysis):
+			if m.aiAnalyzer != nil {
+				return m, m.analyzeCurrentTask()
+			} else {
+				m.message = "AI analysis not available (OpenAI API key or timedb unavailable)"
+			}
 		}
 
 	case taskLoadedMsg:
@@ -445,6 +475,11 @@ func (m *ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = ModeViewing
 		m.currentContext = msg.context
 		m.message = fmt.Sprintf("Context switched to: %s", msg.context)
+		
+	case aiAnalysisCompleteMsg:
+		m.currentAnalysis = msg.analysis
+		m.mode = ModeAIAnalysis
+		m.message = "AI analysis complete (ESC to return to task view)"
 	}
 
 	// Update components based on mode
@@ -734,6 +769,8 @@ func (m *ReviewModel) View() string {
 		sections = append(sections, m.renderCalendar())
 	} else if m.mode == ModeContextSelect {
 		sections = append(sections, m.renderContextSelect())
+	} else if m.mode == ModeAIAnalysis {
+		sections = append(sections, m.renderAIAnalysis())
 	} else if m.mode == ModeCelebrating {
 		sections = append(sections, m.confetti.View())
 	} else {
@@ -958,6 +995,10 @@ type contextChangedMsg struct {
 	context string
 }
 
+type aiAnalysisCompleteMsg struct {
+	analysis *ai.TaskAnalysis
+}
+
 // Commands for async operations
 func (m *ReviewModel) loadCurrentTask() tea.Cmd {
 	return func() tea.Msg {
@@ -1151,5 +1192,131 @@ func (m *ReviewModel) switchContext(contextName string) tea.Cmd {
 			return errorMsg{err}
 		}
 		return contextChangedMsg{context: contextName}
+	}
+}
+
+// analyzeCurrentTask performs AI analysis on the current task
+func (m *ReviewModel) analyzeCurrentTask() tea.Cmd {
+	return func() tea.Msg {
+		if m.currentTask == nil {
+			return errorMsg{fmt.Errorf("no current task to analyze")}
+		}
+		
+		analysis, err := m.aiAnalyzer.AnalyzeTask(m.currentTask)
+		if err != nil {
+			return errorMsg{fmt.Errorf("AI analysis failed: %w", err)}
+		}
+		
+		return aiAnalysisCompleteMsg{analysis: analysis}
+	}
+}
+
+// updateAIAnalysis handles input in AI analysis mode
+func (m *ReviewModel) updateAIAnalysis(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Cancel):
+		m.mode = ModeViewing
+		m.message = ""
+		m.currentAnalysis = nil
+		return m, nil
+		
+	case key.Matches(msg, m.keys.Quit):
+		m.quitting = true
+		return m, tea.Quit
+	}
+	
+	return m, nil
+}
+
+// renderAIAnalysis renders the AI analysis view
+func (m *ReviewModel) renderAIAnalysis() string {
+	if m.currentAnalysis == nil {
+		return "No AI analysis available"
+	}
+
+	analysisStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("5")). // ANSI magenta for AI
+		Padding(1, 2).
+		Margin(2, 4)
+
+	var content strings.Builder
+	
+	// Analysis summary
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(lipgloss.Color("6")).
+		Bold(true).
+		Render("🤖 AI Analysis"))
+	content.WriteString("\n\n")
+	
+	if m.currentAnalysis.Summary != "" {
+		content.WriteString(lipgloss.NewStyle().
+			Bold(true).
+			Render("Summary:"))
+		content.WriteString("\n")
+		content.WriteString(m.currentAnalysis.Summary)
+		content.WriteString("\n\n")
+	}
+	
+	// Time estimate
+	if m.currentAnalysis.TimeEstimate.Hours > 0 {
+		content.WriteString(lipgloss.NewStyle().
+			Bold(true).
+			Render("Time Estimate:"))
+		content.WriteString("\n")
+		content.WriteString(fmt.Sprintf("%.1f hours - %s", 
+			m.currentAnalysis.TimeEstimate.Hours,
+			m.currentAnalysis.TimeEstimate.Reason))
+		content.WriteString("\n\n")
+	}
+	
+	// Suggestions
+	if len(m.currentAnalysis.Suggestions) > 0 {
+		content.WriteString(lipgloss.NewStyle().
+			Bold(true).
+			Render("Suggestions:"))
+		content.WriteString("\n")
+		
+		for i, suggestion := range m.currentAnalysis.Suggestions {
+			// Type indicator with color
+			typeStyle := getTypeStyle(suggestion.Type)
+			content.WriteString(fmt.Sprintf("%d. %s: ", i+1, typeStyle.Render(suggestion.Type)))
+			
+			// Current vs suggested
+			if suggestion.CurrentValue != "" {
+				content.WriteString(fmt.Sprintf("\"%s\" → \"%s\"", 
+					suggestion.CurrentValue, suggestion.SuggestedValue))
+			} else {
+				content.WriteString(fmt.Sprintf("Add \"%s\"", suggestion.SuggestedValue))
+			}
+			content.WriteString("\n")
+			
+			// Reason and confidence
+			content.WriteString(fmt.Sprintf("   %s (confidence: %.0f%%)", 
+				suggestion.Reason, suggestion.Confidence*100))
+			content.WriteString("\n\n")
+		}
+	}
+	
+	content.WriteString("\nPress ESC to return to task view")
+	
+	return analysisStyle.Render(content.String())
+}
+
+// getTypeStyle returns appropriate styling for suggestion types
+func getTypeStyle(suggestionType string) lipgloss.Style {
+	switch suggestionType {
+	case "priority":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // Red
+	case "due_date":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // Yellow
+	case "project":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // Green
+	case "tag":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("5")) // Magenta
+	case "estimate":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("4")) // Blue
+	default:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("7")) // White
 	}
 }

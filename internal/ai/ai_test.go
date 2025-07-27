@@ -136,13 +136,13 @@ Some additional text after...
 
 
 
-func TestCheckModsAvailable(t *testing.T) {
-	// This test will pass/fail based on whether mods is installed
-	err := CheckModsAvailable()
+func TestCheckOpenAIAvailable(t *testing.T) {
+	// This test will pass/fail based on whether OpenAI API key is available
+	err := CheckOpenAIAvailable()
 	if err != nil {
-		t.Logf("Mods not available (expected if not installed): %v", err)
+		t.Logf("OpenAI API not available (expected if no API key): %v", err)
 	} else {
-		t.Log("Mods is available")
+		t.Log("OpenAI API is available")
 	}
 }
 
