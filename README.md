@@ -1,4 +1,22 @@
 # Installing
+
+## Using Homebrew (macOS/Linux)
+```bash
+brew install edmundmiller/taskagent/taskagent
+```
+
+Or tap the repository first:
+```bash
+brew tap edmundmiller/taskagent
+brew install taskagent
+```
+
+## Building from source
+```bash
+go install github.com/emiller/tasksh/cmd/tasksh@latest
+```
+
+## Package managers
 * Debian/Ubuntu:
 ```
 $ sudo apt-get install tasksh
