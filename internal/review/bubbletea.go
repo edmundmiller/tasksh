@@ -2,7 +2,9 @@ package review
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,6 +54,12 @@ type ReviewModel struct {
 	taskCache   map[string]*taskwarrior.Task // Pre-loaded task data
 	total       int      // Total tasks to review
 	reviewed    int      // Number reviewed
+	
+	// Lazy loading state
+	lazyLoadEnabled bool // Whether lazy loading is active
+	loadedTasks     int  // Number of tasks loaded so far
+	totalTasks      int  // Total number of tasks available
+	loadingMore     bool // Currently loading more tasks
 
 	// UI components
 	viewport    viewport.Model
@@ -1014,6 +1022,21 @@ func (m *ReviewModel) renderProgressBar() string {
 		Render("Review Progress: ")
 
 	content := label + m.progressBar.View()
+	
+	// Add lazy loading indicator if applicable
+	if m.lazyLoadEnabled {
+		loadStatus := fmt.Sprintf(" (%d/%d loaded", m.loadedTasks, m.totalTasks)
+		if m.loadingMore {
+			loadStatus += ", loading more..."
+		}
+		loadStatus += ")"
+		
+		lazyLoadStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("5")). // Magenta
+			Italic(true)
+		content += lazyLoadStyle.Render(loadStatus)
+	}
+	
 	return progressStyle.Render(content)
 }
 
@@ -1221,6 +1244,14 @@ func (m *ReviewModel) loadCurrentTask() tea.Cmd {
 	return func() tea.Msg {
 		if m.current >= len(m.tasks) {
 			return errorMsg{fmt.Errorf("task index out of range")}
+		}
+		
+		// Check if we need to load more tasks (when within 10 tasks of the end)
+		if m.lazyLoadEnabled && !m.loadingMore && 
+		   m.current >= m.loadedTasks-10 && m.loadedTasks < m.totalTasks {
+			// Trigger background loading of next batch
+			m.loadingMore = true
+			go m.loadNextBatch()
 		}
 		
 		// Use cached task data if available
@@ -1828,4 +1859,46 @@ func (m *ReviewModel) renderPromptPreview() string {
 		Render("(n)"))
 	
 	return previewStyle.Render(content.String())
+}
+
+// loadNextBatch loads the next batch of tasks in the background
+func (m *ReviewModel) loadNextBatch() {
+	// Determine batch size
+	batchSize := 100
+	if val := os.Getenv("TASKSH_BATCH_SIZE"); val != "" {
+		if size, err := strconv.Atoi(val); err == nil && size > 0 {
+			batchSize = size
+		}
+	}
+	
+	// Calculate range to load
+	start := m.loadedTasks
+	end := start + batchSize
+	if end > len(m.tasks) {
+		end = len(m.tasks)
+	}
+	
+	// Load the batch
+	batchUUIDs := m.tasks[start:end]
+	taskData, err := taskwarrior.GetTasksWithData(batchUUIDs)
+	if err != nil {
+		// Log error but don't crash
+		m.loadingMore = false
+		return
+	}
+	
+	// Update cache with new data
+	for _, td := range taskData {
+		m.taskCache[td.UUID] = &taskwarrior.Task{
+			UUID:        td.UUID,
+			Description: td.Description,
+			Project:     td.Project,
+			Priority:    td.Priority,
+			Status:      td.Status,
+			Due:         td.Due,
+		}
+	}
+	
+	m.loadedTasks = end
+	m.loadingMore = false
 }

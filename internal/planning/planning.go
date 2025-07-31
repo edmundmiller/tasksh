@@ -143,12 +143,18 @@ func (ps *PlanningSession) LoadTasks() error {
 		return fmt.Errorf("failed to get tasks: %w", err)
 	}
 
+	// Batch load all tasks for better performance
+	taskMap, err := taskwarrior.BatchLoadTasks(uuids)
+	if err != nil {
+		return fmt.Errorf("failed to batch load tasks: %w", err)
+	}
+
 	// Convert to PlannedTasks with metadata
 	allTasks := make([]PlannedTask, 0, len(uuids))
 	for _, uuid := range uuids {
-		task, err := taskwarrior.GetTaskInfo(uuid)
-		if err != nil {
-			continue // Skip tasks we can't load
+		task, ok := taskMap[uuid]
+		if !ok {
+			continue // Skip tasks we can't find
 		}
 
 		plannedTask := PlannedTask{

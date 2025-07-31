@@ -111,6 +111,11 @@ type TaskData struct {
 
 // GetTasksForReviewWithData returns tasks that need review with full data
 func GetTasksForReviewWithData() ([]*TaskData, error) {
+	return GetTasksForReviewWithDataProgress(nil)
+}
+
+// GetTasksForReviewWithDataProgress returns tasks with optional progress callback
+func GetTasksForReviewWithDataProgress(progressFn func(loaded, total int)) ([]*TaskData, error) {
 	// First get the UUIDs using the existing method
 	uuids, err := GetTasksForReview()
 	if err != nil {
@@ -121,28 +126,86 @@ func GetTasksForReviewWithData() ([]*TaskData, error) {
 		return []*TaskData{}, nil
 	}
 
-	// Export full task data for these UUIDs
-	// Use a simple approach - export with UUID list
-	args := []string{"export"}
-	for _, uuid := range uuids {
-		args = append(args, "uuid:"+uuid)
-	}
-	
-	output, err := executeTask(args...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to export tasks: %w", err)
-	}
+	// Use the shared batch loading utility with progress
+	return GetTasksWithDataProgress(uuids, progressFn)
+}
 
-	if output == "" || output == "[]" {
+// GetTasksWithData loads full task data for the given UUIDs using batch export
+func GetTasksWithData(uuids []string) ([]*TaskData, error) {
+	return GetTasksWithDataProgress(uuids, nil)
+}
+
+// GetTasksWithDataProgress loads full task data with optional progress callback
+func GetTasksWithDataProgress(uuids []string, progressFn func(loaded, total int)) ([]*TaskData, error) {
+	if len(uuids) == 0 {
 		return []*TaskData{}, nil
 	}
 
-	var tasks []*TaskData
-	if err := json.Unmarshal([]byte(output), &tasks); err != nil {
-		return nil, fmt.Errorf("failed to parse task JSON: %w", err)
+	// Chunk UUIDs to avoid command line length limits
+	// Task command line can handle ~100 UUIDs safely
+	const chunkSize = 100
+	var allTasks []*TaskData
+	total := len(uuids)
+
+	for i := 0; i < len(uuids); i += chunkSize {
+		end := i + chunkSize
+		if end > len(uuids) {
+			end = len(uuids)
+		}
+		chunk := uuids[i:end]
+
+		// Export this chunk
+		args := []string{"export"}
+		for _, uuid := range chunk {
+			args = append(args, "uuid:"+uuid)
+		}
+		
+		output, err := executeTask(args...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to export tasks: %w", err)
+		}
+
+		if output != "" && output != "[]" {
+			var tasks []*TaskData
+			if err := json.Unmarshal([]byte(output), &tasks); err != nil {
+				return nil, fmt.Errorf("failed to parse task JSON: %w", err)
+			}
+			allTasks = append(allTasks, tasks...)
+		}
+
+		// Report progress if callback provided
+		if progressFn != nil {
+			loaded := end
+			if loaded > total {
+				loaded = total
+			}
+			progressFn(loaded, total)
+		}
 	}
 
-	return tasks, nil
+	return allTasks, nil
+}
+
+// BatchLoadTasks loads task data as Task structs (for compatibility)
+func BatchLoadTasks(uuids []string) (map[string]*Task, error) {
+	taskData, err := GetTasksWithData(uuids)
+	if err != nil {
+		return nil, err
+	}
+
+	taskMap := make(map[string]*Task)
+	for _, td := range taskData {
+		taskMap[td.UUID] = &Task{
+			UUID:        td.UUID,
+			Description: td.Description,
+			Project:     td.Project,
+			Priority:    td.Priority,
+			Status:      td.Status,
+			Due:         td.Due,
+		}
+	}
+
+	return taskMap, nil
 }
 
 // GetTaskInfo retrieves detailed information about a task
