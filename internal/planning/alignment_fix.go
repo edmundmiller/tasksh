@@ -27,10 +27,15 @@ func stripANSI(s string) string {
 	return result.String()
 }
 
-// visualWidth calculates the visual width of a string, accounting for:
+// VisualWidth calculates the visual width of a string, accounting for:
 // - ANSI escape sequences (zero width)
 // - Unicode characters (variable width)
 // - Special characters like box drawing
+func VisualWidth(s string) int {
+	return visualWidth(s)
+}
+
+// visualWidth is the internal implementation
 func visualWidth(s string) int {
 	// Strip ANSI codes first
 	clean := stripANSI(s)

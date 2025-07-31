@@ -538,7 +538,11 @@ func (m *PlanningModel) renderSection(title string, tasks []PlannedTask, startIn
 	// Create header with hours on the right
 	headerText := fmt.Sprintf("┏━ %s ", title)
 	hoursText := fmt.Sprintf(" %.1fh ━━━┓", totalHours)
-	padding := contentWidth - len(headerText) - len(hoursText) + 12 // Account for color codes
+	
+	// Calculate padding using visual width
+	headerWidth := visualWidth(headerText)
+	hoursWidth := visualWidth(hoursText)
+	padding := contentWidth - headerWidth - hoursWidth
 	if padding < 1 {
 		padding = 1
 	}
