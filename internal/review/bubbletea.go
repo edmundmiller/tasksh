@@ -49,6 +49,7 @@ type ReviewModel struct {
 	tasks       []string // UUIDs of tasks to review
 	current     int      // Current task index
 	currentTask *taskwarrior.Task    // Current task details
+	taskCache   map[string]*taskwarrior.Task // Pre-loaded task data
 	total       int      // Total tasks to review
 	reviewed    int      // Number reviewed
 
@@ -1222,6 +1223,14 @@ func (m *ReviewModel) loadCurrentTask() tea.Cmd {
 			return errorMsg{fmt.Errorf("task index out of range")}
 		}
 		
+		// Use cached task data if available
+		if m.taskCache != nil {
+			if task, ok := m.taskCache[m.tasks[m.current]]; ok {
+				return taskLoadedMsg{task: task}
+			}
+		}
+		
+		// Fall back to individual task loading if cache miss
 		task, err := taskwarrior.GetTaskInfo(m.tasks[m.current])
 		if err != nil {
 			return errorMsg{err}

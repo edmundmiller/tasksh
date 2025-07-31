@@ -1,6 +1,7 @@
 package taskwarrior
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -90,6 +91,58 @@ func GetTasksForReview() ([]string, error) {
 	}
 
 	return strings.Split(output, "\n"), nil
+}
+
+// TaskData represents the full task data from JSON export
+type TaskData struct {
+	ID          int     `json:"id"`
+	UUID        string  `json:"uuid"`
+	Description string  `json:"description"`
+	Project     string  `json:"project,omitempty"`
+	Priority    string  `json:"priority,omitempty"`
+	Status      string  `json:"status"`
+	Due         string  `json:"due,omitempty"`
+	Wait        string  `json:"wait,omitempty"`
+	Entry       string  `json:"entry"`
+	Modified    string  `json:"modified"`
+	Reviewed    string  `json:"reviewed,omitempty"`
+	Urgency     float64 `json:"urgency"`
+}
+
+// GetTasksForReviewWithData returns tasks that need review with full data
+func GetTasksForReviewWithData() ([]*TaskData, error) {
+	// First get the UUIDs using the existing method
+	uuids, err := GetTasksForReview()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get task UUIDs: %w", err)
+	}
+
+	if len(uuids) == 0 {
+		return []*TaskData{}, nil
+	}
+
+	// Export full task data for these UUIDs
+	// Use a simple approach - export with UUID list
+	args := []string{"export"}
+	for _, uuid := range uuids {
+		args = append(args, "uuid:"+uuid)
+	}
+	
+	output, err := executeTask(args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to export tasks: %w", err)
+	}
+
+	if output == "" || output == "[]" {
+		return []*TaskData{}, nil
+	}
+
+	var tasks []*TaskData
+	if err := json.Unmarshal([]byte(output), &tasks); err != nil {
+		return nil, fmt.Errorf("failed to parse task JSON: %w", err)
+	}
+
+	return tasks, nil
 }
 
 // GetTaskInfo retrieves detailed information about a task

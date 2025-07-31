@@ -14,7 +14,19 @@ func Run(limit int) error {
 		return fmt.Errorf("failed to configure review: %w", err)
 	}
 
-	// Get tasks that need review
+	// Try the new batch approach first
+	tasks, err := taskwarrior.GetTasksForReviewWithData()
+	if err == nil && len(tasks) > 0 {
+		// Apply limit if specified
+		total := len(tasks)
+		if limit > 0 && limit < total {
+			total = limit
+			tasks = tasks[:limit]
+		}
+		return runBubbleTeaReviewBatch(tasks, total)
+	}
+
+	// Fall back to the old approach if batch export fails
 	uuids, err := taskwarrior.GetTasksForReview()
 	if err != nil {
 		return fmt.Errorf("failed to get tasks for review: %w", err)
@@ -62,6 +74,52 @@ func runBubbleTeaReview(uuids []string, total int) error {
 	if _, err := p.Run(); err != nil {
 		// If we can't open a TTY (e.g., in tests), fall back to a simple message
 		fmt.Printf("\nWould start reviewing %d tasks with Bubble Tea interface.\n", len(uuids))
+		return nil
+	}
+
+	return nil
+}
+
+// runBubbleTeaReviewBatch runs the Bubble Tea review interface with pre-loaded task data
+func runBubbleTeaReviewBatch(tasks []*taskwarrior.TaskData, total int) error {
+	// Show welcome message
+	showWelcomeMessage()
+
+	// Create and initialize the review model
+	model := NewReviewModel()
+	
+	// Convert TaskData to Task format for compatibility
+	var uuids []string
+	taskMap := make(map[string]*taskwarrior.Task)
+	
+	for _, td := range tasks {
+		uuids = append(uuids, td.UUID)
+		taskMap[td.UUID] = &taskwarrior.Task{
+			UUID:        td.UUID,
+			Description: td.Description,
+			Project:     td.Project,
+			Priority:    td.Priority,
+			Status:      td.Status,
+			Due:         td.Due,
+		}
+	}
+	
+	model.SetTasks(uuids, total)
+	model.taskCache = taskMap // Add task cache to model
+	
+	// Load the first task from cache
+	if len(uuids) > 0 {
+		model.currentTask = taskMap[uuids[0]]
+		model.updateViewport()
+	}
+
+	// Create the Bubble Tea program
+	p := tea.NewProgram(model, tea.WithAltScreen())
+
+	// Run the program
+	if _, err := p.Run(); err != nil {
+		// If we can't open a TTY (e.g., in tests), fall back to a simple message
+		fmt.Printf("\nWould start reviewing %d tasks with Bubble Tea interface.\n", len(tasks))
 		return nil
 	}
 
