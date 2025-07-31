@@ -1,0 +1,22 @@
+=== Tasksh UI Preview Index ===
+Generated: 2025-07-31 07:40:28
+
+Available previews:
+
+- main.txt: Main task review interface
+- help.txt: Expanded help view with all shortcuts
+- delete.txt: Delete task confirmation dialog
+- modify.txt: Task modification input with completions
+- wait_calendar.txt: Calendar picker for wait date
+- due_calendar.txt: Calendar picker for due date
+- context_select.txt: Context selection interface
+- ai_analysis.txt: AI task analysis results
+- ai_loading.txt: AI analysis loading state
+- prompt_agent.txt: Prompt agent input interface
+- prompt_preview.txt: Command preview from prompt agent
+- celebration.txt: Review completion celebration
+- error.txt: Error state display
+
+Usage:
+  tasksh preview --state=main
+  tasksh preview --all --output-dir=./previews

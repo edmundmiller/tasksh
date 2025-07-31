@@ -1,0 +1,10 @@
+=== PREVIEW: Command preview from prompt agent (80x24) ===
+🤖 Prompt Agent - Command Preview
+
+Commands to execute:
+1. Complete task: "Implement user authentication system"
+2. Log 2 hours of work time
+
+This will mark the task as completed and record the time spent.
+
+Execute these commands? (y) / (n)

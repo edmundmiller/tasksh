@@ -1,0 +1,10 @@
+=== PREVIEW: Prompt agent input interface (80x24) ===
+Prompt Agent - Tell me what to do:
+
+┌─────────────────────────────────────────────────────────────┐
+│ complete this task and log 2 hours█                        │
+└─────────────────────────────────────────────────────────────┘
+
+Tell me what you want to do with this task (e.g., 'complete this task and log 2 hours', 'start timing this task')
+
+Press ESC to cancel

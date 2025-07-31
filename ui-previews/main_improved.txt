@@ -1,0 +1,22 @@
+=== PREVIEW: Main task review interface (80x24) ===
+ [2 of 15]   Implement user authentication system with OAuth2 ...   Context: work 
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│  Description:                                                                │
+│  Implement user authentication system with OAuth2 support                    │
+│                                                                              │
+│  Project: webapp                                                             │
+│  Priority: H                                                                 │
+│  Status: pending                                                             │
+│  Due: 2024-12-25                                                             │
+│  Tags: +auth +security +backend                                              │
+│                                                                              │
+│  UUID: task-uuid-1                                                           │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ Review Progress: █████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 
+r: review • c: complete • e: edit • s: skip • ?: more • q: quit (? for all shortcuts)

@@ -1,0 +1,8 @@
+=== PREVIEW: AI analysis loading state (80x24) ===
+                              ⠋ Analyzing task with AI...
+
+                         Task: Implement user authentication system
+
+                            This may take a few seconds...
+
+                                Press ESC to cancel

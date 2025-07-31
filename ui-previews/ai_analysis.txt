@@ -1,0 +1,28 @@
+=== PREVIEW: AI task analysis results (80x24) ===
+ [2 of 15] Implement user authentication system with OAuth2 support             
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│  🤖 AI Analysis                                                              │
+│                                                                              │
+│  Summary:                                                                    │
+│  This task involves implementing a critical security feature. Consider       │
+│  breaking it into smaller subtasks for better tracking.                      │
+│                                                                              │
+│  Time Estimate:                                                              │
+│  4.5 hours - Based on similar authentication tasks, accounting for OAuth2    │
+│  complexity                                                                  │
+│                                                                              │
+│  Suggestions:                                                                │
+│  1. priority: "H" → "H"                                                      │
+│     Security features should maintain high priority (confidence: 95%)        │
+│                                                                              │
+│  2. tag: Add "+oauth2"                                                       │
+│     Specific technology tag for better filtering (confidence: 85%)           │
+│                                                                              │
+│  3. subtask: Create subtasks for: 1) OAuth provider setup, 2) Token          │
+│  management, 3) User session handling                                        │
+│     Complex task benefits from breakdown (confidence: 90%)                   │
+│                                                                              │
+│  Press ESC to return to task view                                            │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯

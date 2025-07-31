@@ -1,0 +1,20 @@
+=== PREVIEW: Expanded help view with all shortcuts (80x24) ===
+ [2 of 15] Implement user authentication system with OAuth2 support             
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│  Description:                                                                │
+│  Implement user authentication system with OAuth2 support                    │
+│                                                                              │
+│  Project: webapp                                                             │
+│  Priority: H                                                                 │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+j/↓: next task • k/↑: previous task                                                                  
+r: mark reviewed • e: edit task • m: modify task                                                     
+c: complete task • d: delete task • w: wait task • u: due date • s: skip task                        
+x: switch context • a: AI analysis • p: prompt agent • z: undo last action • ?: toggle help • q: quit

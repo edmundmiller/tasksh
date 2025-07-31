@@ -1,0 +1,15 @@
+=== PREVIEW: Context selection interface (80x24) ===
+ [2 of 15] Implement user authentication system with OAuth2 support             
+╭────────────────────────────────────────────────────────────╮
+│                                                            │
+│                    Available Contexts:                     │
+│                                                            │
+│                      ▶ work (current)                      │
+│                             home                           │
+│                           personal                         │
+│                            urgent                          │
+│                           someday                          │
+│                                                            │
+│          ↑↓: navigate  Enter: select  ESC: cancel          │
+│                                                            │
+╰────────────────────────────────────────────────────────────╯

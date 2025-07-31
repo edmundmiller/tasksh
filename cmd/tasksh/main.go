@@ -20,6 +20,7 @@ func main() {
 		fmt.Println("  tasksh plan tomorrow      - Plan tomorrow's tasks")
 		fmt.Println("  tasksh plan week          - Plan upcoming week")
 		fmt.Println("  tasksh plan quick         - Quick planning (3 critical tasks)")
+		fmt.Println("  tasksh preview            - Preview UI states")
 		fmt.Println("  tasksh help               - Show help")
 		fmt.Println("  tasksh diagnostics        - Show diagnostics")
 		os.Exit(0)
@@ -58,6 +59,11 @@ func main() {
 		}
 		
 		if err := planning.Run(horizon); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "preview":
+		if err := cli.RunPreview(args[1:]); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}

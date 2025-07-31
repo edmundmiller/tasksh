@@ -17,6 +17,7 @@ func ShowHelp() {
 	fmt.Println("  plan tomorrow      Plan tomorrow's tasks with time estimates")
 	fmt.Println("  plan week          Plan upcoming week's tasks")
 	fmt.Println("  review [N]         Review tasks (optionally limit to N tasks)")
+	fmt.Println("  preview            Preview UI states for design iteration")
 	fmt.Println("  help               Show this help")
 	fmt.Println("  diagnostics        Show system diagnostics")
 	fmt.Println()
