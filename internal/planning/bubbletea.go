@@ -552,12 +552,21 @@ func (m *PlanningModel) renderSection(title string, tasks []PlannedTask, startIn
 		emptyStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("8")).
 			Italic(true)
-		emptyLine := fmt.Sprintf("┃  %s", emptyStyle.Render("(No tasks in this category)"))
-		padding := contentWidth - len("(No tasks in this category)") - 4
-		if padding < 0 {
-			padding = 0
+		emptyText := "(No tasks in this category)"
+		emptyStyled := emptyStyle.Render(emptyText)
+		emptyPrefix := "┃  "
+		
+		// Calculate padding
+		prefixWidth := visualWidth(emptyPrefix)
+		textWidth := visualWidth(emptyText)
+		rightBorderWidth := 1
+		
+		paddingNeeded := contentWidth - prefixWidth - textWidth - rightBorderWidth
+		if paddingNeeded < 0 {
+			paddingNeeded = 0
 		}
-		emptyLine += strings.Repeat(" ", padding) + "┃"
+		
+		emptyLine := emptyPrefix + emptyStyled + strings.Repeat(" ", paddingNeeded) + "┃"
 		section.WriteString(emptyLine)
 		section.WriteString("\n")
 	} else {
@@ -588,21 +597,28 @@ func (m *PlanningModel) renderSection(title string, tasks []PlannedTask, startIn
 				timeInfo += fmt.Sprintf("  %s", completionTimes[taskIndex].Format("3:04 PM"))
 			}
 			
-			// Calculate space for dots
-			availableWidth := contentWidth - len(prefix) - len(timeInfo) - 6
-			if len(description) > availableWidth - 10 {
-				description = description[:availableWidth-13] + "..."
+			// Calculate available width more accurately
+			// Account for: prefix, spacing, timeInfo, right border
+			prefixWidth := visualWidth(prefix)
+			timeInfoWidth := visualWidth(timeInfo)
+			rightBorderWidth := 3 // "  ┃"
+			
+			availableForDesc := contentWidth - prefixWidth - timeInfoWidth - rightBorderWidth - 2 // 2 for spacing around dots
+			
+			// Truncate description if needed
+			if visualWidth(description) > availableForDesc - 10 {
+				description = truncateToWidth(description, availableForDesc - 10)
 			}
 			
-			// Fill with dots
-			dotCount := availableWidth - len(description) - 2
-			if dotCount < 3 {
-				dotCount = 3
+			// Calculate dots needed
+			descWidth := visualWidth(description)
+			dotsNeeded := availableForDesc - descWidth
+			if dotsNeeded < 3 {
+				dotsNeeded = 3
 			}
-			dots := " " + strings.Repeat(".", dotCount) + " "
 			
-			// Construct main line
-			mainLine := prefix + description + dots + timeInfo + "  ┃"
+			// Construct the line with proper alignment
+			mainLine := prefix + description + " " + strings.Repeat(".", dotsNeeded) + " " + timeInfo + "  ┃"
 			section.WriteString(mainLine)
 			section.WriteString("\n")
 
@@ -644,12 +660,21 @@ func (m *PlanningModel) renderSection(title string, tasks []PlannedTask, startIn
 			if len(metadata) > 0 {
 				metaStyle := lipgloss.NewStyle().
 					Foreground(lipgloss.Color("7"))
-				metaLine := fmt.Sprintf("┃       %s", metaStyle.Render(strings.Join(metadata, " • ")))
-				padding := contentWidth - len(strings.Join(metadata, " • ")) - 8
-				if padding < 0 {
-					padding = 0
+				metaText := strings.Join(metadata, " • ")
+				metaStyled := metaStyle.Render(metaText)
+				metaPrefix := "┃       "
+				
+				// Calculate padding needed
+				metaPrefixWidth := visualWidth(metaPrefix)
+				metaTextWidth := visualWidth(metaText) // Use unstyle text for width calculation
+				rightBorderWidth := 1 // "┃"
+				
+				paddingNeeded := contentWidth - metaPrefixWidth - metaTextWidth - rightBorderWidth
+				if paddingNeeded < 0 {
+					paddingNeeded = 0
 				}
-				metaLine += strings.Repeat(" ", padding) + "┃"
+				
+				metaLine := metaPrefix + metaStyled + strings.Repeat(" ", paddingNeeded) + "┃"
 				section.WriteString(metaLine)
 				section.WriteString("\n")
 			}
