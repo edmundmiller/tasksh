@@ -29,12 +29,23 @@ func (m *MockView) RenderMainView() string {
 	output.WriteString(viewport)
 	output.WriteString("\n")
 
+	// Visual separator
+	separator := m.renderSeparator()
+	output.WriteString(separator)
+	output.WriteString("\n")
+
 	// Progress bar
 	progress := m.renderProgressBar(0.13) // 2/15
 	output.WriteString(progress)
 	output.WriteString("\n")
 
-	// Help text
+	// Help text with top border
+	helpSeparator := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("238")).
+		Render(strings.Repeat("─", m.Width))
+	output.WriteString(helpSeparator)
+	output.WriteString("\n")
+	
 	help := m.renderHelp(false)
 	output.WriteString(help)
 
@@ -177,25 +188,73 @@ func (m *MockView) renderStatusBar(progress, taskTitle string) string {
 }
 
 func (m *MockView) renderViewport() string {
+	// Improved viewport with better visual hierarchy
 	viewportStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("8")).
+		BorderForeground(lipgloss.Color("239")). // Subtle border
 		Padding(1, 2).
 		Width(m.Width - 2).
-		Height(m.Height - 8)
+		Height(m.Height - 10) // Adjusted for separators
 
-	content := `Description:
-Implement user authentication system with OAuth2 support
+	// Content with improved formatting
+	labelStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("245")). // Gray labels
+		Width(12)
+		
+	valueStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("7")) // White values
+	
+	importantStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("3")). // Yellow for important
+		Bold(true)
+	
+	var content strings.Builder
+	
+	// Description with emphasis
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(lipgloss.Color("6")).
+		Bold(true).
+		Render("Description:"))
+	content.WriteString("\n")
+	content.WriteString(valueStyle.Render("Implement user authentication system with OAuth2 support"))
+	content.WriteString("\n\n")
+	
+	// Metadata in two columns
+	leftCol := []string{
+		labelStyle.Render("Project:") + " " + valueStyle.Render("webapp"),
+		labelStyle.Render("Priority:") + " " + importantStyle.Render("H"),
+		labelStyle.Render("Status:") + " " + valueStyle.Render("pending"),
+	}
+	
+	rightCol := []string{
+		labelStyle.Render("Due:") + " " + importantStyle.Render("2024-12-25"),
+		labelStyle.Render("Tags:") + " " + valueStyle.Render("+auth +security +backend"),
+		"",
+	}
+	
+	for i := 0; i < len(leftCol); i++ {
+		content.WriteString(fmt.Sprintf("%-40s %s\n", leftCol[i], rightCol[i]))
+	}
+	
+	content.WriteString("\n")
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(lipgloss.Color("238")).
+		Render("UUID: " + "task-uuid-1"))
 
-Project: webapp
-Priority: H
-Status: pending
-Due: 2024-12-25
-Tags: +auth +security +backend
+	return viewportStyle.Render(content.String())
+}
 
-UUID: task-uuid-1`
-
-	return viewportStyle.Render(content)
+func (m *MockView) renderSeparator() string {
+	// Subtle visual separator
+	separatorStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("236")) // Very dark gray
+	
+	// Create a gradient-like effect
+	left := strings.Repeat("─", m.Width/4)
+	middle := strings.Repeat("═", m.Width/2)
+	right := strings.Repeat("─", m.Width/4)
+	
+	return separatorStyle.Render(left + middle + right)
 }
 
 func (m *MockView) renderViewportSmall() string {
