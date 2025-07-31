@@ -27,7 +27,7 @@ func New() (*TimeDB, error) {
 	}
 	
 	dbPath := filepath.Join(dbDir, "timedb.sqlite3")
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}

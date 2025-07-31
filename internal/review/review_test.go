@@ -133,11 +133,14 @@ func TestHelpOutput(t *testing.T) {
 
 	// Verify all expected help sections are present
 	expectedContent := []string{
-		"tasksh - Interactive task review shell",
+		"tasksh - Interactive task management shell",
 		"Commands:",
+		"plan tomorrow",
+		"plan week",
 		"review [N]",
 		"help",
 		"diagnostics", 
+		"Planning Features:",
 		"During review, you can:",
 		"Edit task",
 		"Modify task",

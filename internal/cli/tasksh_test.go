@@ -21,7 +21,7 @@ func TestVersion(t *testing.T) {
 	}
 
 	// Should contain help output
-	if !regexp.MustCompile(`tasksh - Interactive task review shell`).MatchString(output) {
+	if !regexp.MustCompile(`tasksh - Interactive task management shell`).MatchString(output) {
 		t.Errorf("Expected help output, got: %s", output)
 	}
 }
@@ -38,8 +38,10 @@ func TestHelp(t *testing.T) {
 
 	// Check for expected help content
 	expectedPatterns := []string{
-		`tasksh - Interactive task review shell`,
+		`tasksh - Interactive task management shell`,
 		`Commands:`,
+		`plan tomorrow`,
+		`plan week`,
 		`review \[N\]`,
 		`help`,
 		`diagnostics`,
