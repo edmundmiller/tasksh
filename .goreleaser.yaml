@@ -11,8 +11,7 @@ builds:
   - main: ./cmd/tasksh
     binary: taskagent
     env:
-      - CGO_ENABLED=1
-      - CC=gcc
+      - CGO_ENABLED=0
     goos:
       - linux
       - darwin
