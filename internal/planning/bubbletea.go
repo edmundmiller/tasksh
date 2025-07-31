@@ -385,13 +385,10 @@ func (m *PlanningModel) View() string {
 		sections = append(sections, messageStyle.Render(m.message))
 	}
 
-	// Help with separator
+	// Help with separator - use same width calculation as content
 	helpSepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	helpWidth := m.width - 2
-	if helpWidth < 0 {
-		helpWidth = 0
-	}
-	helpSep := helpSepStyle.Render(strings.Repeat("━", helpWidth))
+	contentWidth := m.getContentWidth()
+	helpSep := helpSepStyle.Render(strings.Repeat("━", contentWidth))
 	sections = append(sections, helpSep)
 	sections = append(sections, m.help.View(m.keys))
 
@@ -410,24 +407,17 @@ func (m *PlanningModel) renderHeader() string {
 		title = "Quick Planning Mode"
 	}
 
-	headerWidth := m.width - 2
-	if headerWidth < 1 {
-		headerWidth = 1
-	}
+	contentWidth := m.getContentWidth()
 	headerStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("15")). // Bright white
 		Background(lipgloss.Color("6")).   // Cyan background
 		Bold(true).
 		Align(lipgloss.Center).
-		Width(headerWidth).
+		Width(contentWidth).
 		Padding(0, 1)
 
-	// Add separator line
-	sepWidth := m.width - 2
-	if sepWidth < 0 {
-		sepWidth = 0
-	}
-	separator := strings.Repeat("━", sepWidth)
+	// Add separator line with consistent width
+	separator := strings.Repeat("━", contentWidth)
 	sepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 
 	return headerStyle.Render(title) + "\n" + sepStyle.Render(separator)
@@ -459,13 +449,10 @@ func (m *PlanningModel) renderCapacityBar() string {
 			Bold(true)
 	}
 
-	// Create capacity bar with icon
+	// Create capacity bar with icon - use consistent width
 	capacityText := icon + status
-	barWidth := m.width - 2
-	if barWidth < 1 {
-		barWidth = 1
-	}
-	capacityBar := style.Width(barWidth).Align(lipgloss.Center).Padding(0, 1).Render(capacityText)
+	contentWidth := m.getContentWidth()
+	capacityBar := style.Width(contentWidth).Align(lipgloss.Center).Padding(0, 1).Render(capacityText)
 	
 	return capacityBar
 }
@@ -529,11 +516,8 @@ func (m *PlanningModel) renderSection(title string, tasks []PlannedTask, startIn
 		totalHours += task.EstimatedHours
 	}
 	
-	// Calculate dynamic width based on terminal size
-	contentWidth := m.width - 4 // Leave some margin
-	if contentWidth < 80 {
-		contentWidth = 80 // Minimum width
-	}
+	// Get consistent content width
+	contentWidth := m.getContentWidth()
 	
 	// Create header with hours on the right
 	headerText := fmt.Sprintf("┏━ %s ", title)
@@ -716,13 +700,10 @@ func (m *PlanningModel) renderSection(title string, tasks []PlannedTask, startIn
 func (m *PlanningModel) renderSummary(completionTimes []time.Time) string {
 	var summary strings.Builder
 
-	// Separator line
+	// Separator line - use consistent content width
 	sepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	sepWidth := m.width - 2
-	if sepWidth < 0 {
-		sepWidth = 0
-	}
-	summary.WriteString(sepStyle.Render(strings.Repeat("─", sepWidth)))
+	contentWidth := m.getContentWidth()
+	summary.WriteString(sepStyle.Render(strings.Repeat("─", contentWidth)))
 	summary.WriteString("\n")
 	
 	// Summary information
@@ -743,14 +724,10 @@ func (m *PlanningModel) renderSummary(completionTimes []time.Time) string {
 		summaryParts = append(summaryParts, fmt.Sprintf("%d tasks in backlog", len(m.session.BacklogTasks)))
 	}
 	
-	sumWidth := m.width - 2
-	if sumWidth < 1 {
-		sumWidth = 1
-	}
 	summaryStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("7")).
 		Align(lipgloss.Center).
-		Width(sumWidth)
+		Width(contentWidth)
 	
 	if len(summaryParts) > 0 {
 		summary.WriteString(summaryStyle.Render(strings.Join(summaryParts, " • ")))
@@ -767,6 +744,15 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// getContentWidth returns the consistent content width for all UI elements
+func (m *PlanningModel) getContentWidth() int {
+	contentWidth := m.width - 4 // Leave some margin
+	if contentWidth < 80 {
+		contentWidth = 80 // Minimum width
+	}
+	return contentWidth
 }
 
 // promoteTaskToCritical promotes a task to the critical section
