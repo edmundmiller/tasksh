@@ -1,0 +1,6 @@
+=== PREVIEW: Error state display (80x24) ===
+
+❌ Error: failed to connect to Taskwarrior: command not found
+
+Please ensure Taskwarrior is installed and available in your PATH.
+Run 'tasksh diagnostics' for more information.
