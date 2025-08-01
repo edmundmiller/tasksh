@@ -17,6 +17,7 @@ func main() {
 		fmt.Println("tasksh - Interactive task management shell")
 		fmt.Println("Usage:")
 		fmt.Println("  tasksh review [limit]     - Start task review")
+		fmt.Println("  tasksh plan today         - Plan today's tasks")
 		fmt.Println("  tasksh plan tomorrow      - Plan tomorrow's tasks")
 		fmt.Println("  tasksh plan week          - Plan upcoming week")
 		fmt.Println("  tasksh plan quick         - Quick planning (3 critical tasks)")
@@ -40,12 +41,14 @@ func main() {
 		}
 	case "plan":
 		if len(args) < 2 {
-			fmt.Println("Usage: tasksh plan <tomorrow|week>")
+			fmt.Println("Usage: tasksh plan <today|tomorrow|week|quick>")
 			os.Exit(1)
 		}
 		
 		var horizon planning.PlanningHorizon
 		switch args[1] {
+		case "today":
+			horizon = planning.HorizonToday
 		case "tomorrow":
 			horizon = planning.HorizonTomorrow
 		case "week":
@@ -54,7 +57,7 @@ func main() {
 			horizon = planning.HorizonQuick
 		default:
 			fmt.Fprintf(os.Stderr, "Unknown planning horizon: %s\n", args[1])
-			fmt.Println("Available horizons: tomorrow, week, quick")
+			fmt.Println("Available horizons: today, tomorrow, week, quick")
 			os.Exit(1)
 		}
 		

@@ -14,6 +14,7 @@ func ShowHelp() {
 	fmt.Println("your task list accurate by systematically reviewing and updating metadata.")
 	fmt.Println()
 	fmt.Println("Commands:")
+	fmt.Println("  plan today         Plan today's tasks with time estimates")
 	fmt.Println("  plan tomorrow      Plan tomorrow's tasks with time estimates")
 	fmt.Println("  plan week          Plan upcoming week's tasks")
 	fmt.Println("  review [N]         Review tasks (optionally limit to N tasks)")

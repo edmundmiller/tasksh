@@ -43,6 +43,9 @@ type PlanningModel struct {
 
 	// Time projection settings
 	workStartTime time.Time
+	
+	// Performance optimization
+	contentWidthCache contentWidthCache
 }
 
 // PlanningKeyMap defines the key bindings for the planning interface
@@ -399,6 +402,8 @@ func (m *PlanningModel) View() string {
 func (m *PlanningModel) renderHeader() string {
 	var title string
 	switch m.session.Horizon {
+	case HorizonToday:
+		title = fmt.Sprintf("Today's Plan (%s)", m.session.Date.Format("Monday, January 2"))
 	case HorizonTomorrow:
 		title = fmt.Sprintf("Tomorrow's Plan (%s)", m.session.Date.Format("Monday, January 2"))
 	case HorizonWeek:
@@ -587,8 +592,8 @@ func (m *PlanningModel) renderSection(title string, tasks []PlannedTask, startIn
 			
 			// Calculate available width more accurately
 			// Account for: prefix, spacing, timeInfo, right border
-			prefixWidth := visualWidth(prefix)
-			timeInfoWidth := visualWidth(timeInfo)
+			prefixWidth := cachedVisualWidth(prefix)
+			timeInfoWidth := cachedVisualWidth(timeInfo)
 			rightBorderWidth := 3 // "  ┃"
 			
 			availableForDesc := contentWidth - prefixWidth - timeInfoWidth - rightBorderWidth - 2 // 2 for spacing around dots
@@ -748,11 +753,7 @@ func max(a, b int) int {
 
 // getContentWidth returns the consistent content width for all UI elements
 func (m *PlanningModel) getContentWidth() int {
-	contentWidth := m.width - 4 // Leave some margin
-	if contentWidth < 80 {
-		contentWidth = 80 // Minimum width
-	}
-	return contentWidth
+	return m.contentWidthCache.get(m.width)
 }
 
 // promoteTaskToCritical promotes a task to the critical section
@@ -872,10 +873,14 @@ func Run(horizon PlanningHorizon) error {
 	if len(session.Tasks) == 0 {
 		var horizonName string
 		switch horizon {
+		case HorizonToday:
+			horizonName = "today"
 		case HorizonTomorrow:
 			horizonName = "tomorrow"
 		case HorizonWeek:
 			horizonName = "this week"
+		case HorizonQuick:
+			horizonName = "quick planning"
 		}
 		fmt.Printf("\nNo tasks found for %s.\n\n", horizonName)
 		return nil

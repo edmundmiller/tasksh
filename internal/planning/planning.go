@@ -15,7 +15,8 @@ import (
 type PlanningHorizon int
 
 const (
-	HorizonTomorrow PlanningHorizon = iota
+	HorizonToday PlanningHorizon = iota
+	HorizonTomorrow
 	HorizonWeek
 	HorizonQuick // Quick planning mode for busy mornings
 )
@@ -104,6 +105,8 @@ func NewPlanningSession(horizon PlanningHorizon) (*PlanningSession, error) {
 	}
 
 	switch horizon {
+	case HorizonToday:
+		session.Date = time.Now() // Today
 	case HorizonTomorrow:
 		session.Date = time.Now().AddDate(0, 0, 1) // Tomorrow
 	case HorizonWeek:
@@ -131,6 +134,8 @@ func (ps *PlanningSession) LoadTasks() error {
 	var err error
 
 	switch ps.Horizon {
+	case HorizonToday:
+		uuids, err = ps.getTasksForToday()
 	case HorizonTomorrow:
 		uuids, err = ps.getTasksForTomorrow()
 	case HorizonWeek:
@@ -192,6 +197,19 @@ func (ps *PlanningSession) LoadTasks() error {
 	ps.calculateTotals()
 
 	return nil
+}
+
+// getTasksForToday gets tasks relevant for today's planning
+func (ps *PlanningSession) getTasksForToday() ([]string, error) {
+	todayStr := time.Now().Format("2006-01-02")
+
+	// Get tasks due today, overdue, or with high urgency
+	filters := []string{
+		fmt.Sprintf("(due:%s or due.before:%s or urgency.over:15.0)", todayStr, todayStr),
+		"and", "(+PENDING", "or", "+WAITING)",
+	}
+
+	return ps.executeTaskFilter(filters)
 }
 
 // getTasksForTomorrow gets tasks relevant for tomorrow's planning
