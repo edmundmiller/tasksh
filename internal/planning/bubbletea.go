@@ -214,7 +214,10 @@ func NewPlanningModel(session *PlanningSession) *PlanningModel {
 // Init initializes the planning model
 func (m *PlanningModel) Init() tea.Cmd {
 	m.updateViewport()
-	return nil
+	// Request the initial window size to prevent the UI from rendering
+	// at half screen on startup. Without this, the first render happens
+	// before receiving the WindowSizeMsg, causing a jarring resize.
+	return tea.WindowSize()
 }
 
 // Update handles messages and updates the model
