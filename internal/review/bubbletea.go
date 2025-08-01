@@ -280,8 +280,8 @@ func (c ConditionalKeyMap) FullHelp() [][]key.Binding {
 
 // NewReviewModel creates a new review model
 func NewReviewModel() *ReviewModel {
-	// Create viewport
-	vp := viewport.New(80, 20)
+	// Create viewport with minimal initial size - will be resized when WindowSizeMsg arrives
+	vp := viewport.New(1, 1)
 	vp.Style = lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("8")).  // ANSI bright black (gray)
@@ -370,10 +370,14 @@ func NewReviewModel() *ReviewModel {
 
 // Init initializes the review model
 func (m *ReviewModel) Init() tea.Cmd {
-	// Request the initial window size to prevent the UI from rendering
-	// at half screen on startup. Without this, the first render happens
-	// before receiving the WindowSizeMsg, causing a jarring resize.
-	return tea.WindowSize()
+	// Request the initial window size immediately to ensure proper sizing
+	// from the first render. This prevents the UI from appearing at the 
+	// hardcoded viewport size before the actual terminal dimensions are known.
+	return tea.Batch(
+		tea.WindowSize(),
+		// Initialize any other components that need startup commands
+		func() tea.Msg { return nil }, // Placeholder for future init commands
+	)
 }
 
 // Update handles messages and updates the model
@@ -927,6 +931,11 @@ func (m *ReviewModel) updateDueDateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *ReviewModel) View() string {
 	if m.quitting {
 		return fmt.Sprintf("\nEnd of review. %d out of %d tasks reviewed.\n\n", m.reviewed, m.total)
+	}
+	
+	// Don't render until we have the actual window size
+	if m.width == 0 || m.height == 0 {
+		return ""
 	}
 
 	var sections []string

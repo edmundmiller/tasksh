@@ -101,8 +101,8 @@ func runBubbleTeaReview(uuids []string, total int) error {
 		model.updateViewport()
 	}
 
-	// Create the Bubble Tea program
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	// Create the Bubble Tea program with proper initialization options
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	// Run the program
 	if _, err := p.Run(); err != nil {
@@ -147,8 +147,8 @@ func runBubbleTeaReviewBatch(tasks []*taskwarrior.TaskData, total int) error {
 		model.updateViewport()
 	}
 
-	// Create the Bubble Tea program
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	// Create the Bubble Tea program with proper initialization options
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	// Run the program
 	if _, err := p.Run(); err != nil {
@@ -215,8 +215,8 @@ func runBubbleTeaReviewLazy(allUUIDs []string, initialLoad int) error {
 		model.updateViewport()
 	}
 
-	// Create the Bubble Tea program
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	// Create the Bubble Tea program with proper initialization options
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	// Run the program
 	if _, err := p.Run(); err != nil {

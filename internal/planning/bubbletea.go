@@ -178,8 +178,8 @@ func (k PlanningKeyMap) FullHelp() [][]key.Binding {
 
 // NewPlanningModel creates a new planning model
 func NewPlanningModel(session *PlanningSession) *PlanningModel {
-	// Create viewport
-	vp := viewport.New(80, 20)
+	// Create viewport with minimal initial size - will be resized when WindowSizeMsg arrives
+	vp := viewport.New(1, 1)
 	vp.Style = lipgloss.NewStyle()
 
 	// Create help model
@@ -213,11 +213,17 @@ func NewPlanningModel(session *PlanningSession) *PlanningModel {
 
 // Init initializes the planning model
 func (m *PlanningModel) Init() tea.Cmd {
-	m.updateViewport()
-	// Request the initial window size to prevent the UI from rendering
-	// at half screen on startup. Without this, the first render happens
-	// before receiving the WindowSizeMsg, causing a jarring resize.
-	return tea.WindowSize()
+	// Request the initial window size immediately to ensure proper sizing
+	// from the first render. This prevents the UI from appearing at the
+	// hardcoded viewport size before the actual terminal dimensions are known.
+	return tea.Batch(
+		tea.WindowSize(),
+		// Update viewport content after dimensions are received
+		func() tea.Msg { 
+			// This will be processed after WindowSizeMsg
+			return nil 
+		},
+	)
 }
 
 // Update handles messages and updates the model
@@ -242,6 +248,9 @@ func (m *PlanningModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.viewport.Width = msg.Width
 		m.viewport.Height = msg.Height - verticalMarginHeight
+		
+		// Update viewport content now that we have proper dimensions
+		m.updateViewport()
 
 	case tea.KeyMsg:
 		switch {
@@ -367,6 +376,11 @@ func (m *PlanningModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *PlanningModel) View() string {
 	if m.quitting {
 		return fmt.Sprintf("\nPlanning session ended. %d tasks in plan.\n\n", len(m.session.Tasks))
+	}
+	
+	// Don't render until we have the actual window size
+	if m.width == 0 || m.height == 0 {
+		return ""
 	}
 
 	var sections []string
@@ -889,9 +903,9 @@ func Run(horizon PlanningHorizon) error {
 		return nil
 	}
 
-	// Create and run Bubble Tea program
+	// Create and run Bubble Tea program with proper initialization options
 	model := NewPlanningModel(session)
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("failed to run planning interface: %w", err)
