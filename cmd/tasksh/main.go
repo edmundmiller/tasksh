@@ -26,6 +26,7 @@ func main() {
 		fmt.Println("  tasksh plan tomorrow      - Legacy: plan tomorrow's tasks")
 		fmt.Println("  tasksh plan week          - Legacy: plan upcoming week")
 		fmt.Println("  tasksh plan quick         - Legacy: quick planning")
+		fmt.Println("  tasksh sync [since]       - Sync timewarrior data")
 		fmt.Println("  tasksh preview            - Preview UI states")
 		fmt.Println("  tasksh help               - Show help")
 		fmt.Println("  tasksh diagnostics        - Show diagnostics")
@@ -102,6 +103,12 @@ func main() {
 		default:
 			fmt.Fprintf(os.Stderr, "Unknown planning mode: %s\n", args[1])
 			fmt.Println("Available modes: daily, weekly, today, tomorrow, week, quick")
+			os.Exit(1)
+		}
+	case "sync":
+		syncCmd := &cli.SyncCommand{}
+		if err := syncCmd.Run(args[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 	case "preview":

@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,6 +21,7 @@ type PlanningModel struct {
 	session      *DailyPlanningSession
 	viewport     viewport.Model
 	textInput    textinput.Model
+	spinner      spinner.Model
 	help         help.Model
 	keys         KeyMap
 	
@@ -30,6 +32,8 @@ type PlanningModel struct {
 	quitting        bool
 	width           int
 	height          int
+	isLoading       bool
+	loadingMessage  string
 	
 	// Step-specific state
 	reflectionText   string
@@ -125,6 +129,11 @@ func NewPlanningModel(session *DailyPlanningSession) *PlanningModel {
 	ti.CharLimit = 500
 	ti.Width = 70
 
+	// Create spinner
+	s := spinner.New()
+	s.Spinner = spinner.Points
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+
 	// Create help
 	h := help.New()
 	h.ShowAll = false
@@ -133,6 +142,7 @@ func NewPlanningModel(session *DailyPlanningSession) *PlanningModel {
 		session:   session,
 		viewport:  vp,
 		textInput: ti,
+		spinner:   s,
 		help:      h,
 		keys:      DefaultKeyMap(),
 		width:     80,
@@ -142,11 +152,17 @@ func NewPlanningModel(session *DailyPlanningSession) *PlanningModel {
 	return model
 }
 
+// LoadingCompleteMsg is sent when loading is complete
+type LoadingCompleteMsg struct {
+	err error
+}
+
 // Init initializes the model
 func (m *PlanningModel) Init() tea.Cmd {
 	return tea.Batch(
 		tea.WindowSize(),
 		textinput.Blink,
+		m.spinner.Tick,
 	)
 }
 
@@ -156,6 +172,18 @@ func (m *PlanningModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case LoadingCompleteMsg:
+		m.isLoading = false
+		m.loadingMessage = ""
+		if msg.err != nil {
+			m.message = fmt.Sprintf("Error: %v", msg.err)
+		} else {
+			m.selectedIndex = 0
+			m.message = ""
+			m.updateViewport()
+		}
+		return m, nil
+		
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -217,7 +245,9 @@ func (m *PlanningModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.handleDeselection()
 
 		case key.Matches(msg, m.keys.Next):
-			m.handleNextStep()
+			if cmd := m.handleNextStep(); cmd != nil {
+				return m, cmd
+			}
 
 		case key.Matches(msg, m.keys.Previous):
 			m.handlePreviousStep()
@@ -227,6 +257,12 @@ func (m *PlanningModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Update viewport
 	m.viewport, cmd = m.viewport.Update(msg)
 	cmds = append(cmds, cmd)
+	
+	// Update spinner if loading
+	if m.isLoading {
+		m.spinner, cmd = m.spinner.Update(msg)
+		cmds = append(cmds, cmd)
+	}
 
 	return m, tea.Batch(cmds...)
 }
@@ -247,7 +283,10 @@ func (m *PlanningModel) View() string {
 	sections = append(sections, m.renderHeader())
 
 	// Main content
-	if m.needsTextInput() && m.textInput.Focused() {
+	if m.isLoading {
+		// Show loading spinner
+		sections = append(sections, m.renderLoadingView())
+	} else if m.needsTextInput() && m.textInput.Focused() {
 		sections = append(sections, m.renderTextInputView())
 	} else {
 		sections = append(sections, m.viewport.View())
@@ -685,26 +724,43 @@ func (m *PlanningModel) handleDeselection() {
 	}
 }
 
-func (m *PlanningModel) handleNextStep() {
+func (m *PlanningModel) handleNextStep() tea.Cmd {
 	// Special handling for reflection step - allow skipping
 	if m.session.CurrentStep == StepReflection && m.session.Reflection == nil {
-		// Skip reflection and move to task selection
-		err := m.session.NextStep()
-		if err != nil {
-			m.message = fmt.Sprintf("Error: %v", err)
-		} else {
-			m.selectedIndex = 0
-			m.message = "Skipped reflection - proceeding to task selection"
-			m.updateViewport()
+		// Show loading and move to task selection
+		m.isLoading = true
+		m.loadingMessage = "Loading tasks and calculating estimates..."
+		
+		// Return a command that loads tasks in the background
+		return func() tea.Msg {
+			err := m.session.NextStep()
+			return LoadingCompleteMsg{err: err}
 		}
-		return
+	} else if m.session.CurrentStep == StepReflection {
+		// Has reflection data, show loading
+		m.isLoading = true
+		m.loadingMessage = "Loading tasks and calculating estimates..."
+		
+		// Return a command that loads tasks in the background
+		return func() tea.Msg {
+			err := m.session.NextStep()
+			return LoadingCompleteMsg{err: err}
+		}
+	}
+	
+	// Save text input if needed
+	if m.needsTextInput() && m.textInput.Focused() {
+		m.handleTextInput()
+		m.textInput.Blur()
+		return nil
 	}
 	
 	if m.needsTextInput() {
 		m.textInput.Focus()
-		return
+		return nil
 	}
 	
+	// For other steps, advance normally
 	err := m.session.NextStep()
 	if err != nil {
 		m.message = fmt.Sprintf("Error: %v", err)
@@ -713,6 +769,7 @@ func (m *PlanningModel) handleNextStep() {
 		m.message = ""
 		m.updateViewport()
 	}
+	return nil
 }
 
 func (m *PlanningModel) handlePreviousStep() {
@@ -724,6 +781,53 @@ func (m *PlanningModel) handlePreviousStep() {
 		m.message = ""
 		m.updateViewport()
 	}
+}
+
+// renderLoadingView renders the loading screen
+func (m *PlanningModel) renderLoadingView() string {
+	// Calculate center position
+	contentHeight := 5
+	paddingTop := (m.viewport.Height - contentHeight) / 2
+	if paddingTop < 0 {
+		paddingTop = 0
+	}
+	
+	// Create loading content
+	var content strings.Builder
+	
+	// Add padding
+	for i := 0; i < paddingTop; i++ {
+		content.WriteString("\n")
+	}
+	
+	// Spinner and message
+	spinnerLine := fmt.Sprintf("%s %s", m.spinner.View(), m.loadingMessage)
+	spinnerStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("205")).
+		Bold(true)
+	
+	// Center the spinner line
+	centeredSpinner := lipgloss.PlaceHorizontal(m.viewport.Width, lipgloss.Center, spinnerStyle.Render(spinnerLine))
+	content.WriteString(centeredSpinner + "\n\n")
+	
+	// Add context
+	contextStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8")).
+		Italic(true)
+	
+	contextLines := []string{
+		"This may include:",
+		"• Syncing timewarrior data (if needed)",
+		"• Calculating time estimates",
+		"• Analyzing task priorities",
+	}
+	
+	for _, line := range contextLines {
+		centered := lipgloss.PlaceHorizontal(m.viewport.Width, lipgloss.Center, contextStyle.Render(line))
+		content.WriteString(centered + "\n")
+	}
+	
+	return content.String()
 }
 
 // Run starts the daily planning interface
