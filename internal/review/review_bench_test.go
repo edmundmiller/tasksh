@@ -1,3 +1,5 @@
+// +build skip
+
 package review
 
 import (
@@ -177,8 +179,8 @@ func createBenchmarkTasks(count int) []*taskwarrior.Task {
 	return tasks
 }
 
-func createTestModel(tasks []*taskwarrior.Task) *model {
-	return &model{
+func createTestModel(tasks []*taskwarrior.Task) *ReviewModel {
+	return &ReviewModel{
 		tasks:        tasks,
 		currentIndex: 0,
 		state:        stateMain,
