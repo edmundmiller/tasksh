@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/emiller/tasksh/internal/planning/shared"
 	"github.com/emiller/tasksh/internal/taskwarrior"
 	"github.com/emiller/tasksh/internal/timedb"
@@ -12,6 +13,11 @@ import (
 
 // WorkflowStep represents a step in the daily planning workflow
 type WorkflowStep int
+
+// BackgroundLoadResult represents the result of background task loading
+type BackgroundLoadResult struct {
+	Error error
+}
 
 const (
 	StepReflection WorkflowStep = iota
@@ -58,6 +64,10 @@ type DailyPlanningSession struct {
 	
 	// Internal utilities
 	analyzer *shared.TaskAnalyzer
+	
+	// Background loading state
+	tasksLoaded bool
+	loadError   error
 }
 
 // NewDailyPlanningSession creates a new daily planning session
@@ -106,8 +116,14 @@ func (s *DailyPlanningSession) IsCompleted() bool {
 func (s *DailyPlanningSession) NextStep() error {
 	switch s.CurrentStep {
 	case StepReflection:
-		if err := s.loadAvailableTasks(); err != nil {
-			return fmt.Errorf("failed to load tasks: %w", err)
+		// Only load if not already loaded in background
+		if !s.tasksLoaded {
+			if err := s.loadAvailableTasks(); err != nil {
+				return fmt.Errorf("failed to load tasks: %w", err)
+			}
+		} else if s.loadError != nil {
+			// If background loading failed, return that error
+			return fmt.Errorf("failed to load tasks: %w", s.loadError)
 		}
 		s.CurrentStep = StepTaskSelection
 	case StepTaskSelection:
@@ -200,6 +216,8 @@ func (s *DailyPlanningSession) loadAvailableTasks() error {
 	// Sort by priority
 	shared.SortTasksByPriority(s.AvailableTasks)
 
+	// Mark as loaded
+	s.tasksLoaded = true
 	return nil
 }
 
@@ -281,6 +299,29 @@ func (s *DailyPlanningSession) GetCapacityWarning() string {
 // SetDailyFocus sets the main focus/intention for the day
 func (s *DailyPlanningSession) SetDailyFocus(focus string) {
 	s.DailyFocus = strings.TrimSpace(focus)
+}
+
+// StartBackgroundTaskLoading starts loading tasks in the background
+// Returns a tea.Cmd that performs the loading
+func (s *DailyPlanningSession) StartBackgroundTaskLoading() func() tea.Msg {
+	return func() tea.Msg {
+		// Load tasks in background
+		err := s.loadAvailableTasks()
+		if err != nil {
+			s.loadError = err
+		}
+		return BackgroundLoadResult{Error: err}
+	}
+}
+
+// IsTasksLoaded returns whether tasks have been loaded
+func (s *DailyPlanningSession) IsTasksLoaded() bool {
+	return s.tasksLoaded
+}
+
+// GetLoadError returns any error from background loading
+func (s *DailyPlanningSession) GetLoadError() error {
+	return s.loadError
 }
 
 // GetDailySummary returns a summary of the planned day

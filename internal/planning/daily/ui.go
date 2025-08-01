@@ -34,6 +34,8 @@ type PlanningModel struct {
 	height          int
 	isLoading       bool
 	loadingMessage  string
+	backgroundLoading bool
+	tasksPreloaded   bool
 	
 	// Step-specific state
 	reflectionText   string
@@ -157,13 +159,30 @@ type LoadingCompleteMsg struct {
 	err error
 }
 
+// TaskLoadingStartedMsg indicates background loading has begun
+type TaskLoadingStartedMsg struct{}
+
+// TaskLoadingProgressMsg provides optional progress updates during loading
+type TaskLoadingProgressMsg struct {
+	message string
+	percent float64
+}
+
 // Init initializes the model
 func (m *PlanningModel) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		tea.WindowSize(),
 		textinput.Blink,
 		m.spinner.Tick,
-	)
+	}
+	
+	// Start background task loading if we're on the reflection step
+	if m.session.CurrentStep == StepReflection {
+		m.backgroundLoading = true
+		cmds = append(cmds, m.session.StartBackgroundTaskLoading())
+	}
+	
+	return tea.Batch(cmds...)
 }
 
 // Update handles messages and updates the model
@@ -172,6 +191,16 @@ func (m *PlanningModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case BackgroundLoadResult:
+		// Background loading completed
+		m.backgroundLoading = false
+		m.tasksPreloaded = msg.Error == nil
+		if msg.Error != nil {
+			// Store error but don't show it yet - will show when transitioning
+			m.err = msg.Error
+		}
+		return m, nil
+		
 	case LoadingCompleteMsg:
 		m.isLoading = false
 		m.loadingMessage = ""
@@ -725,26 +754,41 @@ func (m *PlanningModel) handleDeselection() {
 }
 
 func (m *PlanningModel) handleNextStep() tea.Cmd {
-	// Special handling for reflection step - allow skipping
-	if m.session.CurrentStep == StepReflection && m.session.Reflection == nil {
-		// Show loading and move to task selection
-		m.isLoading = true
-		m.loadingMessage = "Loading tasks and calculating estimates..."
-		
-		// Return a command that loads tasks in the background
-		return func() tea.Msg {
+	// Special handling for reflection step
+	if m.session.CurrentStep == StepReflection {
+		// Check if tasks are already preloaded via session
+		if m.session.IsTasksLoaded() {
+			// Tasks already loaded, proceed immediately
 			err := m.session.NextStep()
-			return LoadingCompleteMsg{err: err}
-		}
-	} else if m.session.CurrentStep == StepReflection {
-		// Has reflection data, show loading
-		m.isLoading = true
-		m.loadingMessage = "Loading tasks and calculating estimates..."
-		
-		// Return a command that loads tasks in the background
-		return func() tea.Msg {
-			err := m.session.NextStep()
-			return LoadingCompleteMsg{err: err}
+			if err != nil {
+				m.message = fmt.Sprintf("Error: %v", err)
+			} else {
+				m.selectedIndex = 0
+				m.message = ""
+				m.updateViewport()
+			}
+			return nil
+		} else if m.backgroundLoading {
+			// Still loading in background, show spinner
+			m.isLoading = true
+			m.loadingMessage = "Finishing task loading..."
+			
+			// Return a command that waits for loading to complete
+			return func() tea.Msg {
+				// Wait a bit for loading to complete
+				time.Sleep(100 * time.Millisecond)
+				err := m.session.NextStep()
+				return LoadingCompleteMsg{err: err}
+			}
+		} else {
+			// Not loaded and not loading - start loading now
+			m.isLoading = true
+			m.loadingMessage = "Loading tasks and calculating estimates..."
+			
+			return func() tea.Msg {
+				err := m.session.NextStep()
+				return LoadingCompleteMsg{err: err}
+			}
 		}
 	}
 	
