@@ -28,7 +28,6 @@ go.work
 # Old C/C++ build artifacts (kept for historical reference)
 cmake.h
 commit.h
-Makefile
 src/tasksh
 CMakeFiles
 CMakeCache.txt
@@ -40,3 +39,10 @@ CPackSourceConfig.cmake
 patches
 liblibshared.a
 libtasksh.a
+
+# Profiling and benchmark artifacts
+*.prof
+bench_results/
+profile_planning
+bench_compare
+startup_bench
