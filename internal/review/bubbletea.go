@@ -1312,6 +1312,12 @@ func (m *ReviewModel) completeCurrentTask() tea.Cmd {
 		if err := taskwarrior.CompleteTask(m.tasks[m.current]); err != nil {
 			return errorMsg{err}
 		}
+		
+		// Mark task as reviewed after completion
+		if err := taskwarrior.MarkTaskReviewed(m.tasks[m.current]); err != nil {
+			return errorMsg{fmt.Errorf("task completed but failed to mark as reviewed: %w", err)}
+		}
+		
 		return actionCompletedMsg{message: "Task completed."}
 	}
 }
@@ -1321,6 +1327,12 @@ func (m *ReviewModel) deleteCurrentTask() tea.Cmd {
 		if err := taskwarrior.DeleteTask(m.tasks[m.current]); err != nil {
 			return errorMsg{err}
 		}
+		
+		// Mark task as reviewed after deletion
+		if err := taskwarrior.MarkTaskReviewed(m.tasks[m.current]); err != nil {
+			return errorMsg{fmt.Errorf("task deleted but failed to mark as reviewed: %w", err)}
+		}
+		
 		return actionCompletedMsg{message: "Task deleted."}
 	}
 }
@@ -1337,6 +1349,12 @@ func (m *ReviewModel) modifyCurrentTask(modification string) tea.Cmd {
 		if err := taskwarrior.ModifyTask(m.tasks[m.current], modification); err != nil {
 			return errorMsg{err}
 		}
+		
+		// Mark task as reviewed after modification
+		if err := taskwarrior.MarkTaskReviewed(m.tasks[m.current]); err != nil {
+			return errorMsg{fmt.Errorf("task modified but failed to mark as reviewed: %w", err)}
+		}
+		
 		return actionCompletedMsg{message: "Task modified."}
 	}
 }
@@ -1346,6 +1364,12 @@ func (m *ReviewModel) waitCurrentTask(waitDate, reason string) tea.Cmd {
 		if err := taskwarrior.WaitTask(m.tasks[m.current], waitDate, reason); err != nil {
 			return errorMsg{err}
 		}
+		
+		// Mark task as reviewed after setting wait date
+		if err := taskwarrior.MarkTaskReviewed(m.tasks[m.current]); err != nil {
+			return errorMsg{fmt.Errorf("task wait date set but failed to mark as reviewed: %w", err)}
+		}
+		
 		message := fmt.Sprintf("Task set to wait until %s.", waitDate)
 		return actionCompletedMsg{message: message}
 	}
@@ -1356,6 +1380,12 @@ func (m *ReviewModel) dueCurrentTask(dueDate string) tea.Cmd {
 		if err := taskwarrior.SetDueDate(m.tasks[m.current], dueDate); err != nil {
 			return errorMsg{err}
 		}
+		
+		// Mark task as reviewed after setting due date
+		if err := taskwarrior.MarkTaskReviewed(m.tasks[m.current]); err != nil {
+			return errorMsg{fmt.Errorf("task due date set but failed to mark as reviewed: %w", err)}
+		}
+		
 		message := fmt.Sprintf("Task due date set to %s.", dueDate)
 		return actionCompletedMsg{message: message}
 	}
@@ -1366,6 +1396,12 @@ func (m *ReviewModel) removeDueCurrentTask() tea.Cmd {
 		if err := taskwarrior.RemoveDueDate(m.tasks[m.current]); err != nil {
 			return errorMsg{err}
 		}
+		
+		// Mark task as reviewed after removing due date
+		if err := taskwarrior.MarkTaskReviewed(m.tasks[m.current]); err != nil {
+			return errorMsg{fmt.Errorf("task due date removed but failed to mark as reviewed: %w", err)}
+		}
+		
 		message := "Task due date removed."
 		return actionCompletedMsg{message: message}
 	}
@@ -1376,6 +1412,12 @@ func (m *ReviewModel) removeWaitCurrentTask() tea.Cmd {
 		if err := taskwarrior.RemoveWaitDate(m.tasks[m.current]); err != nil {
 			return errorMsg{err}
 		}
+		
+		// Mark task as reviewed after removing wait date
+		if err := taskwarrior.MarkTaskReviewed(m.tasks[m.current]); err != nil {
+			return errorMsg{fmt.Errorf("task wait date removed but failed to mark as reviewed: %w", err)}
+		}
+		
 		message := "Task wait date removed."
 		return actionCompletedMsg{message: message}
 	}

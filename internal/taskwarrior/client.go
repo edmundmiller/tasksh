@@ -170,7 +170,16 @@ func GetTasksWithDataProgress(uuids []string, progressFn func(loaded, total int)
 			if err := json.Unmarshal([]byte(output), &tasks); err != nil {
 				return nil, fmt.Errorf("failed to parse task JSON: %w", err)
 			}
-			allTasks = append(allTasks, tasks...)
+			
+			// Filter out deleted and completed tasks
+			var validTasks []*TaskData
+			for _, task := range tasks {
+				if task.Status != "deleted" && task.Status != "completed" {
+					validTasks = append(validTasks, task)
+				}
+			}
+			
+			allTasks = append(allTasks, validTasks...)
 		}
 
 		// Report progress if callback provided
