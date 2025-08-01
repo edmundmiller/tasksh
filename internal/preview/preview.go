@@ -86,8 +86,13 @@ func GeneratePreview(opts PreviewOptions) string {
 		output = mock.RenderMainView()
 	}
 
-	// Add preview header
-	header := fmt.Sprintf("=== PREVIEW: %s (%dx%d) ===\n", getStateDescription(opts.State), opts.Width, opts.Height)
+	// Add preview header (ensure it doesn't exceed terminal width)
+	headerText := fmt.Sprintf("=== PREVIEW: %s (%dx%d) ===", getStateDescription(opts.State), opts.Width, opts.Height)
+	if len(headerText) > opts.Width {
+		// Truncate the header to fit
+		headerText = headerText[:opts.Width-3] + "..."
+	}
+	header := headerText + "\n"
 	return header + output
 }
 

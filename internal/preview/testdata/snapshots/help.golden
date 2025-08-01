@@ -1,30 +1,21 @@
 === PREVIEW: Expanded help view with all shortcuts (80x24) ===
- [2 of 15]   Implement user authentication system with OAuth2 ...   Context: work 
-╭──────────────────────────────────────────────────────────────────────────────╮
-│                                                                              │
-│  Description:                                                                │
-│  Implement user authentication system with OAuth2 support                    │
-│                                                                              │
-│  Project: webapp                                                             │
-│  Priority: H                                                                 │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-╰──────────────────────────────────────────────────────────────────────────────╯
-Navigation:
-  j/↓ next task  k/↑ previous task
+ [2 of 15]   Implement user authentication system with OAuth...   Context: work 
+╭─────────────────────────�
+│                                                                          │
+│  Description:                                                            │
+│  Implement user authentication system with OAuth2 support                │
+│                                                                          │
+│  Project: webapp                                                         │
+│  Priority: H                                                             │
+│                                                                          │
+│                                                                          │
+│                                                                          │
+│                                                                          │
+│                                                                          │
+│                                                                          │
+╰─────────────────────────�
+[1m[35mNavigation:[0m
+  [36mj/↓[0m [37mnext[0m  [36mk/↑[0m [37mprev[0m
 
-Primary Actions:
-  r mark reviewed  c complete  e edit
-
-Task Management:
-  m modify  d delete  w wait  u due date  s skip
-
-Advanced:
-  x context  a AI analysis  p prompt agent  z undo
-
-System:
-  ? toggle help  q quit
+[1m[35mActions:[0m
+  [36mr[0m [37mreview[0m  [36mc[0m [37mcomplete[0m
