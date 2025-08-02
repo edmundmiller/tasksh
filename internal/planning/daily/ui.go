@@ -435,6 +435,16 @@ func (m *PlanningModel) renderReflectionStep() string {
 	var content strings.Builder
 	
 	content.WriteString("🌅 Starting your daily planning ritual\n\n")
+	
+	// Check if there's an existing plan
+	if m.session.HasExistingPlan {
+		warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true)
+		content.WriteString(warningStyle.Render(fmt.Sprintf("📅 You have %d tasks already scheduled for today", len(m.session.ExistingScheduledTasks))) + "\n")
+		
+		infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+		content.WriteString(infoStyle.Render("You can review and add more tasks if needed.") + "\n\n")
+	}
+	
 	content.WriteString("Before diving into today's tasks, let's reflect on yesterday's work.\n")
 	content.WriteString("This helps you learn from experience and set realistic expectations.\n\n")
 	
@@ -460,8 +470,15 @@ func (m *PlanningModel) renderTaskSelectionStep() string {
 	var content strings.Builder
 	
 	content.WriteString("📋 Select tasks for today\n\n")
-	content.WriteString("Choose tasks that align with your energy and available time.\n")
-	content.WriteString("Focus on what you can realistically accomplish.\n\n")
+	
+	// Show existing scheduled tasks info
+	if m.session.HasExistingPlan {
+		infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
+		content.WriteString(infoStyle.Render(fmt.Sprintf("You already have %d tasks scheduled. You can add more if needed.", len(m.session.ExistingScheduledTasks))) + "\n\n")
+	} else {
+		content.WriteString("Choose tasks that align with your energy and available time.\n")
+		content.WriteString("Focus on what you can realistically accomplish.\n\n")
+	}
 	
 	if len(m.session.AvailableTasks) == 0 {
 		content.WriteString("No tasks found for today's planning.\n")
@@ -934,7 +951,11 @@ func (m *PlanningModel) renderSummaryStep() string {
 	
 	// Completion instruction
 	instructionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Italic(true).Margin(1, 0)
-	content.WriteString(instructionStyle.Render("Press 'n' to complete planning and start your productive day! 🚀"))
+	if m.session.HasExistingPlan {
+		content.WriteString(instructionStyle.Render("Press 'n' to update your schedule and start your productive day! 🚀"))
+	} else {
+		content.WriteString(instructionStyle.Render("Press 'n' to schedule these tasks and start your productive day! 🚀"))
+	}
 	
 	return content.String()
 }
@@ -1052,6 +1073,17 @@ func (m *PlanningModel) handleDeselection() {
 }
 
 func (m *PlanningModel) handleNextStep() tea.Cmd {
+	// Special handling for summary step - schedule tasks when completing
+	if m.session.CurrentStep == StepSummary {
+		// Schedule all selected tasks
+		if err := m.session.ScheduleSelectedTasks(); err != nil {
+			m.message = fmt.Sprintf("Warning: Could not schedule tasks: %v", err)
+			// Don't block completion, just warn
+		} else {
+			m.message = "✓ Tasks scheduled successfully!"
+		}
+	}
+	
 	// Special handling for reflection step
 	if m.session.CurrentStep == StepReflection {
 		// Check if tasks are already preloaded via session

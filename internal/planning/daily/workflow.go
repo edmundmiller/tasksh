@@ -68,6 +68,10 @@ type DailyPlanningSession struct {
 	// Background loading state
 	tasksLoaded bool
 	loadError   error
+	
+	// Existing scheduled tasks
+	ExistingScheduledTasks []shared.PlannedTask
+	HasExistingPlan       bool
 }
 
 // NewDailyPlanningSession creates a new daily planning session
@@ -89,6 +93,18 @@ func NewDailyPlanningSession(targetDate time.Time) (*DailyPlanningSession, error
 		CurrentStep: StepReflection,
 		StartedAt:   time.Now(),
 		analyzer:    shared.NewTaskAnalyzer(timeDB),
+	}
+	
+	// Check for existing scheduled tasks
+	scheduledTasks, err := session.CheckScheduledTasks()
+	if err != nil {
+		// Log but don't fail - we can continue without this check
+		fmt.Printf("Warning: Could not check scheduled tasks: %v\n", err)
+	} else if len(scheduledTasks) > 0 {
+		session.ExistingScheduledTasks = scheduledTasks
+		session.HasExistingPlan = true
+		// Pre-select the scheduled tasks
+		session.SelectedTasks = scheduledTasks
 	}
 
 	return session, nil
@@ -178,6 +194,46 @@ func (s *DailyPlanningSession) GetReflectionPrompts() []string {
 		"How was your energy level throughout the day?",
 		"What would you do differently?",
 	}
+}
+
+// CheckScheduledTasks checks for tasks already scheduled for the target date
+func (s *DailyPlanningSession) CheckScheduledTasks() ([]shared.PlannedTask, error) {
+	dateStr := s.Context.Date.Format("2006-01-02")
+	
+	// Get tasks scheduled for today
+	filters := []string{
+		fmt.Sprintf("scheduled:%s", dateStr),
+		"and", "(+PENDING", "or", "+WAITING)",
+	}
+
+	uuids, err := shared.LoadTasksByFilter(filters...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load scheduled tasks: %w", err)
+	}
+
+	if len(uuids) == 0 {
+		return []shared.PlannedTask{}, nil
+	}
+
+	// Batch load all tasks
+	taskMap, err := taskwarrior.BatchLoadTasks(uuids)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch load scheduled tasks: %w", err)
+	}
+
+	// Convert to PlannedTasks
+	scheduledTasks := make([]shared.PlannedTask, 0, len(uuids))
+	for _, uuid := range uuids {
+		task, ok := taskMap[uuid]
+		if !ok {
+			continue
+		}
+
+		plannedTask := s.analyzer.AnalyzeTask(task, s.Context.Date)
+		scheduledTasks = append(scheduledTasks, plannedTask)
+	}
+
+	return scheduledTasks, nil
 }
 
 // loadAvailableTasks loads tasks relevant for today's planning
@@ -322,6 +378,20 @@ func (s *DailyPlanningSession) IsTasksLoaded() bool {
 // GetLoadError returns any error from background loading
 func (s *DailyPlanningSession) GetLoadError() error {
 	return s.loadError
+}
+
+// ScheduleSelectedTasks marks all selected tasks as scheduled for the target date
+func (s *DailyPlanningSession) ScheduleSelectedTasks() error {
+	dateStr := s.Context.Date.Format("2006-01-02")
+	
+	for _, task := range s.SelectedTasks {
+		err := taskwarrior.ModifyTask(task.UUID, fmt.Sprintf("scheduled:%s", dateStr))
+		if err != nil {
+			return fmt.Errorf("failed to schedule task %s: %w", task.UUID, err)
+		}
+	}
+	
+	return nil
 }
 
 // GetDailySummary returns a summary of the planned day
