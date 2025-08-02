@@ -611,46 +611,153 @@ func (m *PlanningModel) renderWorkloadAssessmentStep() string {
 	var content strings.Builder
 	
 	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
-	content.WriteString(headerStyle.Render("⚖️ Workload Assessment") + "\n\n")
+	content.WriteString(headerStyle.Render("⚖️  Workload Assessment") + "\n\n")
 	
 	if len(m.session.SelectedTasks) == 0 {
-		content.WriteString("No tasks selected. Go back to select tasks.\n")
+		emptyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+		content.WriteString(emptyStyle.Render("No tasks selected. Go back to select tasks.") + "\n")
 		return content.String()
 	}
 	
 	// Calculate assessment
 	assessment := m.session.CalculateWorkloadAssessment()
-	totalHours, breakdown, _ := shared.CalculateWorkloadSummary(m.session.SelectedTasks)
+	totalHours, breakdown, energyBreakdown := shared.CalculateWorkloadSummary(m.session.SelectedTasks)
+	utilizationRate := totalHours / assessment.FocusHours * 100
 	
-	// Format workload summary with better styling
-	summaryStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
+	// Description section
+	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+	content.WriteString(descStyle.Render("Let's review your workload to ensure a sustainable and productive day.") + "\n")
+	content.WriteString(descStyle.Render("This assessment helps prevent overcommitment and burnout.") + "\n\n")
+	
+	// Workload Overview Box
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("8")).
+		Padding(1, 2).
+		Width(60)
+	
+	var boxContent strings.Builder
+	summaryStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Bold(true)
 	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
 	
-	content.WriteString(labelStyle.Render("Selected Tasks: ") + summaryStyle.Render(fmt.Sprintf("%d", len(m.session.SelectedTasks))) + "\n")
-	content.WriteString(labelStyle.Render("Total Time: ") + summaryStyle.Render(fmt.Sprintf("%.1f hours", totalHours)) + "\n")
-	content.WriteString(labelStyle.Render("Available Focus Time: ") + summaryStyle.Render(fmt.Sprintf("%.1f hours", assessment.FocusHours)) + "\n\n")
+	boxContent.WriteString(labelStyle.Render("📋 Selected Tasks: ") + summaryStyle.Render(fmt.Sprintf("%d tasks", len(m.session.SelectedTasks))) + "\n")
+	boxContent.WriteString(labelStyle.Render("⏱  Total Estimated Time: ") + summaryStyle.Render(fmt.Sprintf("%.1f hours", totalHours)) + "\n")
+	boxContent.WriteString(labelStyle.Render("🎯 Available Focus Time: ") + summaryStyle.Render(fmt.Sprintf("%.1f hours", assessment.FocusHours)) + "\n")
+	boxContent.WriteString(labelStyle.Render("📊 Capacity Utilization: ") + summaryStyle.Render(fmt.Sprintf("%.0f%%", utilizationRate)))
 	
-	// Capacity warning
+	content.WriteString(boxStyle.Render(boxContent.String()) + "\n\n")
+	
+	// Capacity visualization bar
+	barWidth := 50
+	filledWidth := int(float64(barWidth) * (totalHours / assessment.FocusHours))
+	if filledWidth > barWidth {
+		filledWidth = barWidth
+	}
+	
+	// Determine bar color based on capacity
+	var barColor string
+	if utilizationRate > 120 {
+		barColor = "1" // Red - significantly overloaded
+	} else if utilizationRate > 100 {
+		barColor = "3" // Yellow - overloaded
+	} else if utilizationRate > 90 {
+		barColor = "11" // Bright yellow - near capacity
+	} else {
+		barColor = "10" // Green - good capacity
+	}
+	
+	barStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(barColor))
+	emptyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	
+	content.WriteString("Capacity: [")
+	content.WriteString(barStyle.Render(strings.Repeat("█", filledWidth)))
+	content.WriteString(emptyStyle.Render(strings.Repeat("░", barWidth-filledWidth)))
+	content.WriteString("] ")
+	content.WriteString(fmt.Sprintf("%.0f%%", utilizationRate) + "\n\n")
+	
+	// Capacity warning with icon
 	warning := m.session.GetCapacityWarning()
 	content.WriteString(warning + "\n\n")
 	
-	// Breakdown by category with improved styling
-	breakdownHeaderStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
-	content.WriteString(breakdownHeaderStyle.Render("BREAKDOWN BY PRIORITY:") + "\n")
-	
-	for category, hours := range breakdown {
-		if hours > 0 {
-			categoryStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
-			hoursStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Bold(true)
-			content.WriteString(fmt.Sprintf("  %s: %s\n", 
-				categoryStyle.Render(category.String()), 
-				hoursStyle.Render(fmt.Sprintf("%.1fh", hours))))
+	// Task breakdown by priority
+	if len(breakdown) > 0 {
+		breakdownHeaderStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
+		content.WriteString(breakdownHeaderStyle.Render("TASK BREAKDOWN BY PRIORITY:") + "\n")
+		
+		priorities := []shared.TaskCategory{shared.CategoryCritical, shared.CategoryImportant, shared.CategoryFlexible}
+		for _, category := range priorities {
+			hours, exists := breakdown[category]
+			if exists && hours > 0 {
+				var icon, color string
+				switch category {
+				case shared.CategoryCritical:
+					icon = "🔴"
+					color = "1"
+				case shared.CategoryImportant:
+					icon = "🟡"
+					color = "3"
+				case shared.CategoryFlexible:
+					icon = "🟢"
+					color = "2"
+				}
+				
+				categoryStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+				hoursStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Bold(true)
+				percentage := (hours / totalHours) * 100
+				
+				content.WriteString(fmt.Sprintf("  %s %s: %s (%.0f%%)\n", 
+					icon,
+					categoryStyle.Render(category.String()), 
+					hoursStyle.Render(fmt.Sprintf("%.1fh", hours)),
+					percentage))
+			}
 		}
+		content.WriteString("\n")
+	}
+	
+	// Energy distribution
+	if len(energyBreakdown) > 0 {
+		energyHeaderStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
+		content.WriteString(energyHeaderStyle.Render("ENERGY REQUIREMENTS:") + "\n")
+		
+		energyLevels := []shared.EnergyLevel{shared.EnergyHigh, shared.EnergyMedium, shared.EnergyLow}
+		for _, level := range energyLevels {
+			hours, exists := energyBreakdown[level]
+			if exists && hours > 0 {
+				var icon string
+				switch level {
+				case shared.EnergyHigh:
+					icon = "⚡"
+				case shared.EnergyMedium:
+					icon = "🔋"
+				case shared.EnergyLow:
+					icon = "🔌"
+				}
+				
+				energyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+				hoursStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
+				
+				content.WriteString(fmt.Sprintf("  %s %s: %s\n", 
+					icon,
+					energyStyle.Render(fmt.Sprintf("%-12s", level.String()+"energy")), 
+					hoursStyle.Render(fmt.Sprintf("%.1fh", hours))))
+			}
+		}
+		content.WriteString("\n")
+	}
+	
+	// Recommendations based on workload
+	if utilizationRate > 100 {
+		recStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Italic(true)
+		content.WriteString(recStyle.Render("💡 Tip: Consider deferring some flexible tasks or breaking larger tasks into smaller chunks.") + "\n\n")
+	} else if utilizationRate < 60 {
+		recStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Italic(true)
+		content.WriteString(recStyle.Render("💡 Tip: You have room for more tasks if needed, or enjoy a lighter day!") + "\n\n")
 	}
 	
 	// Add instruction with styling
 	instructionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Italic(true)
-	content.WriteString("\n" + instructionStyle.Render("Press 'n' to continue, 'p' to adjust task selection"))
+	content.WriteString(instructionStyle.Render("Press 'n' to continue, 'p' to adjust task selection"))
 	
 	return content.String()
 }
@@ -659,16 +766,46 @@ func (m *PlanningModel) renderWorkloadAssessmentStep() string {
 func (m *PlanningModel) renderFinalizationStep() string {
 	var content strings.Builder
 	
-	content.WriteString("🎯 Finalize Your Plan\n\n")
-	content.WriteString("Set a daily focus to guide your work and decision-making.\n\n")
+	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
+	content.WriteString(headerStyle.Render("🎯 Finalize Your Plan") + "\n\n")
+	
+	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+	content.WriteString(descStyle.Render("A daily focus helps you stay aligned and make better decisions throughout the day.") + "\n")
+	content.WriteString(descStyle.Render("When faced with competing priorities, your focus statement guides your choices.") + "\n\n")
 	
 	if m.session.DailyFocus != "" {
+		// Show the focus in a nice box
+		focusBoxStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("11")).
+			Padding(1, 2).
+			Width(60).
+			Align(lipgloss.Center)
+		
 		focusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true)
-		content.WriteString(focusStyle.Render(fmt.Sprintf("Daily Focus: %s", m.session.DailyFocus)) + "\n\n")
+		focusContent := "✨ Today's Focus ✨\n\n" + focusStyle.Render(m.session.DailyFocus)
+		
+		content.WriteString(focusBoxStyle.Render(focusContent) + "\n\n")
 		
 		completedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true)
-		content.WriteString(completedStyle.Render("✓ Daily focus set") + "\n")
+		content.WriteString(completedStyle.Render("✓ Daily focus set") + "\n\n")
+		
+		// Quick summary of the plan
+		totalHours, _, _ := shared.CalculateWorkloadSummary(m.session.SelectedTasks)
+		summaryStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+		content.WriteString(summaryStyle.Render(fmt.Sprintf("You've planned %d tasks totaling %.1f hours.", len(m.session.SelectedTasks), totalHours)) + "\n")
+		
+		instructionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Italic(true)
+		content.WriteString("\n" + instructionStyle.Render("Press 'n' to review your complete plan"))
 	} else {
+		// Examples of good focus statements
+		exampleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+		content.WriteString("Examples of effective daily focus statements:\n")
+		content.WriteString(exampleStyle.Render("• \"Ship the authentication feature with comprehensive tests\"") + "\n")
+		content.WriteString(exampleStyle.Render("• \"Deep work on algorithm optimization - no meetings\"") + "\n")
+		content.WriteString(exampleStyle.Render("• \"Clear technical debt and improve code documentation\"") + "\n")
+		content.WriteString(exampleStyle.Render("• \"Customer support and bug fixes - be responsive\"") + "\n\n")
+		
 		instructionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Italic(true)
 		content.WriteString(instructionStyle.Render("Press 'n' to set your daily focus"))
 	}
@@ -680,11 +817,163 @@ func (m *PlanningModel) renderFinalizationStep() string {
 func (m *PlanningModel) renderSummaryStep() string {
 	var content strings.Builder
 	
-	content.WriteString("📊 Daily Plan Summary\n\n")
-	content.WriteString(m.session.GetDailySummary())
-	content.WriteString("\n\nPress 'n' to complete planning")
+	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
+	content.WriteString(headerStyle.Render("📊 Daily Plan Summary") + "\n\n")
+	
+	// Check if we have tasks
+	if len(m.session.SelectedTasks) == 0 {
+		emptyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+		content.WriteString(emptyStyle.Render("No tasks planned for today.") + "\n")
+		return content.String()
+	}
+	
+	// Date and focus header
+	dateStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Bold(true)
+	content.WriteString(dateStyle.Render(m.session.Context.Date.Format("📅 Monday, January 2, 2006")) + "\n")
+	
+	if m.session.DailyFocus != "" {
+		focusBoxStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("11")).
+			Padding(0, 2).
+			Margin(1, 0).
+			Width(70)
+		
+		focusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
+		focusContent := "🎯 " + focusStyle.Render(m.session.DailyFocus)
+		content.WriteString(focusBoxStyle.Render(focusContent) + "\n")
+	}
+	
+	// Calculate totals and organize tasks
+	totalHours, _, _ := shared.CalculateWorkloadSummary(m.session.SelectedTasks)
+	
+	// Tasks by category
+	criticalTasks := []shared.PlannedTask{}
+	importantTasks := []shared.PlannedTask{}
+	flexibleTasks := []shared.PlannedTask{}
+	
+	for _, task := range m.session.SelectedTasks {
+		switch task.Category {
+		case shared.CategoryCritical:
+			criticalTasks = append(criticalTasks, task)
+		case shared.CategoryImportant:
+			importantTasks = append(importantTasks, task)
+		case shared.CategoryFlexible:
+			flexibleTasks = append(flexibleTasks, task)
+		}
+	}
+	
+	// Task list with time projections
+	sectionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
+	
+	if len(criticalTasks) > 0 {
+		content.WriteString("\n" + sectionStyle.Render("🔴 CRITICAL TASKS") + "\n")
+		renderTaskList(&content, criticalTasks, "1")
+	}
+	
+	if len(importantTasks) > 0 {
+		content.WriteString("\n" + sectionStyle.Render("🟡 IMPORTANT TASKS") + "\n")
+		renderTaskList(&content, importantTasks, "3")
+	}
+	
+	if len(flexibleTasks) > 0 {
+		content.WriteString("\n" + sectionStyle.Render("🟢 FLEXIBLE TASKS") + "\n")
+		renderTaskList(&content, flexibleTasks, "2")
+	}
+	
+	// Summary statistics box
+	statsBoxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("8")).
+		Padding(1, 2).
+		Margin(1, 0).
+		Width(50)
+	
+	var statsContent strings.Builder
+	statsStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+	
+	statsContent.WriteString(labelStyle.Render("📋 Total Tasks: ") + statsStyle.Render(fmt.Sprintf("%d", len(m.session.SelectedTasks))) + "\n")
+	statsContent.WriteString(labelStyle.Render("⏱  Total Time: ") + statsStyle.Render(fmt.Sprintf("%.1f hours", totalHours)) + "\n")
+	
+	// Time projections
+	if totalHours > 0 {
+		now := time.Now()
+		startTime := time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, now.Location()) // Assume 9 AM start
+		endTime := startTime.Add(time.Duration(totalHours * float64(time.Hour)))
+		
+		statsContent.WriteString(labelStyle.Render("🕐 If starting at 9 AM: ") + 
+			statsStyle.Render(fmt.Sprintf("Done by %s", endTime.Format("3:04 PM"))))
+	}
+	
+	content.WriteString("\n" + statsBoxStyle.Render(statsContent.String()) + "\n")
+	
+	// Final assessment
+	if m.session.Assessment != nil {
+		utilizationRate := totalHours / m.session.Assessment.FocusHours * 100
+		var statusIcon, statusText, statusColor string
+		
+		if utilizationRate > 100 {
+			statusIcon = "⚠️"
+			statusText = "Challenging day ahead - stay focused on priorities!"
+			statusColor = "3"
+		} else if utilizationRate > 85 {
+			statusIcon = "💪"
+			statusText = "Full day planned - you've got this!"
+			statusColor = "11"
+		} else {
+			statusIcon = "✨"
+			statusText = "Well-balanced day - room for the unexpected!"
+			statusColor = "10"
+		}
+		
+		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor)).Italic(true)
+		content.WriteString(statusIcon + " " + statusStyle.Render(statusText) + "\n")
+	}
+	
+	// Completion instruction
+	instructionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Italic(true).Margin(1, 0)
+	content.WriteString(instructionStyle.Render("Press 'n' to complete planning and start your productive day! 🚀"))
 	
 	return content.String()
+}
+
+// Helper function to render task lists consistently
+func renderTaskList(content *strings.Builder, tasks []shared.PlannedTask, color string) {
+	taskStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
+	timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+	
+	for i, task := range tasks {
+		// Calculate running time
+		prefix := fmt.Sprintf("  %d. ", i+1)
+		taskLine := fmt.Sprintf("%s%s ", prefix, taskStyle.Render(task.Description))
+		
+		// Right-align the time
+		timeStr := fmt.Sprintf("%.1fh", task.EstimatedHours)
+		spacesNeeded := 70 - lipgloss.Width(taskLine) - len(timeStr)
+		if spacesNeeded < 1 {
+			spacesNeeded = 1
+		}
+		
+		content.WriteString(taskLine + strings.Repeat(" ", spacesNeeded) + timeStyle.Render(timeStr) + "\n")
+		
+		// Add task metadata if available
+		if task.Due != "" || task.Project != "" {
+			metaStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+			metaPrefix := strings.Repeat(" ", len(prefix))
+			
+			var meta []string
+			if task.Project != "" {
+				meta = append(meta, "Project: "+task.Project)
+			}
+			if task.Due != "" {
+				meta = append(meta, "Due: "+task.Due)
+			}
+			if len(meta) > 0 {
+				content.WriteString(metaPrefix + metaStyle.Render(strings.Join(meta, " • ")) + "\n")
+			}
+		}
+	}
 }
 
 // Helper methods
