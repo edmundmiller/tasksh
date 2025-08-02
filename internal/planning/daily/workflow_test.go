@@ -1,10 +1,12 @@
 package daily
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/emiller/tasksh/internal/planning/shared"
+	"github.com/emiller/tasksh/internal/taskwarrior"
 )
 
 func TestNewDailyPlanningSession(t *testing.T) {
@@ -140,11 +142,15 @@ func TestTaskSelection(t *testing.T) {
 	}
 	defer session.Close()
 
+	// Clear any pre-selected tasks
+	session.SelectedTasks = []shared.PlannedTask{}
+
 	// Mock some available tasks
+	// We need to use real Task structs, not mocks, since PlannedTask expects *taskwarrior.Task
 	session.AvailableTasks = []shared.PlannedTask{
-		{Task: &mockTask("task1"), EstimatedHours: 2.0},
-		{Task: &mockTask("task2"), EstimatedHours: 1.5},
-		{Task: &mockTask("task3"), EstimatedHours: 3.0},
+		{Task: &taskwarrior.Task{UUID: "task1", Description: "Task 1"}, EstimatedHours: 2.0},
+		{Task: &taskwarrior.Task{UUID: "task2", Description: "Task 2"}, EstimatedHours: 1.5},
+		{Task: &taskwarrior.Task{UUID: "task3", Description: "Task 3"}, EstimatedHours: 3.0},
 	}
 
 	// Test adding tasks to selection
@@ -184,9 +190,9 @@ func TestWorkloadAssessment(t *testing.T) {
 
 	// Add some selected tasks
 	session.SelectedTasks = []shared.PlannedTask{
-		{Task: &mockTask("task1"), EstimatedHours: 2.0, RequiredEnergy: shared.EnergyHigh},
-		{Task: &mockTask("task2"), EstimatedHours: 1.5, RequiredEnergy: shared.EnergyMedium},
-		{Task: &mockTask("task3"), EstimatedHours: 3.0, RequiredEnergy: shared.EnergyLow},
+		{Task: &taskwarrior.Task{UUID: "task1", Description: "Task 1"}, EstimatedHours: 2.0, RequiredEnergy: shared.EnergyHigh},
+		{Task: &taskwarrior.Task{UUID: "task2", Description: "Task 2"}, EstimatedHours: 1.5, RequiredEnergy: shared.EnergyMedium},
+		{Task: &taskwarrior.Task{UUID: "task3", Description: "Task 3"}, EstimatedHours: 3.0, RequiredEnergy: shared.EnergyLow},
 	}
 
 	assessment := session.CalculateWorkloadAssessment()
@@ -252,8 +258,10 @@ func TestGetStepProgress(t *testing.T) {
 		t.Errorf("Expected current step 0, got %d", current)
 	}
 
-	if total != int(StepCompleted) {
-		t.Errorf("Expected total steps %d, got %d", int(StepCompleted), total)
+	// Total should be StepSummary + 1 (not StepCompleted)
+	expectedTotal := int(StepSummary) + 1
+	if total != expectedTotal {
+		t.Errorf("Expected total steps %d, got %d", expectedTotal, total)
 	}
 
 	// Advance a step and test again
@@ -295,22 +303,119 @@ func TestIsCompleted(t *testing.T) {
 	}
 }
 
-// Mock helper functions
+// Test background task loading
+func TestBackgroundTaskLoading(t *testing.T) {
+	targetDate := time.Now()
+	session, err := NewDailyPlanningSession(targetDate)
+	if err != nil {
+		t.Fatalf("Failed to create session: %v", err)
+	}
+	defer session.Close()
 
-type mockTaskwarriorTask struct {
-	description string
-	uuid        string
-}
+	// Initially tasks are not loaded
+	if session.IsTasksLoaded() {
+		t.Error("Expected tasks to not be loaded initially")
+	}
 
-func (m *mockTaskwarriorTask) GetDescription() string { return m.description }
-func (m *mockTaskwarriorTask) GetUUID() string        { return m.uuid }
+	// Start background loading
+	loadCmd := session.StartBackgroundTaskLoading()
+	if loadCmd == nil {
+		t.Error("Expected background loading command to be returned")
+	}
 
-func mockTask(description string) *mockTaskwarriorTask {
-	return &mockTaskwarriorTask{
-		description: description,
-		uuid:        "mock-uuid-" + description,
+	// Execute the loading function
+	msg := loadCmd()
+	if result, ok := msg.(BackgroundLoadResult); ok {
+		// In a test environment without Taskwarrior, this might fail
+		// but we're testing the mechanism works
+		if result.Error != nil {
+			t.Logf("Background loading error (expected in test): %v", result.Error)
+		}
+	} else {
+		t.Error("Expected BackgroundLoadResult message type")
 	}
 }
 
-// Note: This is a simplified mock that doesn't fully implement taskwarrior.Task interface
-// In a real implementation, you'd want a more complete mock or use the actual Task struct
+// Test existing scheduled tasks detection
+func TestCheckScheduledTasks(t *testing.T) {
+	targetDate := time.Now()
+	session, err := NewDailyPlanningSession(targetDate)
+	if err != nil {
+		t.Fatalf("Failed to create session: %v", err)
+	}
+	defer session.Close()
+
+	// This will likely return empty in test environment
+	// but we're testing the function exists and doesn't panic
+	tasks, err := session.CheckScheduledTasks()
+	if err != nil {
+		// Expected in test environment without Taskwarrior
+		t.Logf("CheckScheduledTasks error (expected): %v", err)
+	} else {
+		// If it somehow succeeds, verify the return type
+		if tasks == nil {
+			t.Error("Expected non-nil task slice")
+		}
+	}
+}
+
+// Test daily summary generation
+func TestGetDailySummary(t *testing.T) {
+	targetDate := time.Now()
+	session, err := NewDailyPlanningSession(targetDate)
+	if err != nil {
+		t.Fatalf("Failed to create session: %v", err)
+	}
+	defer session.Close()
+
+	// Test with no tasks
+	// Clear any pre-selected tasks
+	session.SelectedTasks = []shared.PlannedTask{}
+	
+	summary := session.GetDailySummary()
+	if summary == "" {
+		t.Error("Expected non-empty summary")
+	}
+	if !strings.Contains(summary, "No tasks planned for today") {
+		t.Error("Expected summary to indicate no tasks")
+	}
+
+	// Add some tasks
+	session.SelectedTasks = []shared.PlannedTask{
+		{
+			Task: &taskwarrior.Task{
+				UUID:        "test-1",
+				Description: "Critical task",
+			},
+			EstimatedHours: 2.0,
+			Category:       shared.CategoryCritical,
+		},
+		{
+			Task: &taskwarrior.Task{
+				UUID:        "test-2",
+				Description: "Important task",
+			},
+			EstimatedHours: 1.5,
+			Category:       shared.CategoryImportant,
+		},
+	}
+	session.DailyFocus = "Test focus"
+
+	summary = session.GetDailySummary()
+	if !strings.Contains(summary, "Daily Plan for") {
+		t.Error("Expected summary to contain date header")
+	}
+	if !strings.Contains(summary, "Test focus") {
+		t.Error("Expected summary to contain daily focus")
+	}
+	if !strings.Contains(summary, "CRITICAL TASKS") {
+		t.Error("Expected summary to contain critical tasks section")
+	}
+	if !strings.Contains(summary, "IMPORTANT TASKS") {
+		t.Error("Expected summary to contain important tasks section")
+	}
+	if !strings.Contains(summary, "3.5 hours") {
+		t.Error("Expected summary to contain total hours")
+	}
+}
+
