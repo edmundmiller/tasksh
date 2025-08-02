@@ -30,9 +30,9 @@ func CheckAvailable() error {
 // executeTask runs a task command and returns the output
 func executeTask(args ...string) (string, error) {
 	cmd := exec.Command("task", args...)
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput() // Use CombinedOutput to get stderr as well
 	if err != nil {
-		return "", fmt.Errorf("task command failed: %w", err)
+		return "", fmt.Errorf("task command failed: %w (output: %s)", err, string(output))
 	}
 	return strings.TrimSpace(string(output)), nil
 }
