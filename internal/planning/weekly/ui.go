@@ -106,7 +106,7 @@ func DefaultKeyMap() KeyMap {
 
 // ShortHelp returns the short help text
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Add, k.Next, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.Add, k.Next, k.Previous, k.Help, k.Quit}
 }
 
 // FullHelp returns the full help text
@@ -139,6 +139,14 @@ func NewPlanningModel(session *WeeklyPlanningSession) *PlanningModel {
 	// Create help
 	h := help.New()
 	h.ShowAll = false
+	
+	// Style the help for better visibility (matching review interface)
+	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))   // ANSI cyan for keys
+	h.Styles.ShortDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("7"))  // ANSI white for descriptions
+	h.Styles.ShortSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))  // ANSI bright black for separators
+	h.Styles.FullKey = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))    // ANSI cyan for keys in full help
+	h.Styles.FullDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("7"))   // ANSI white for descriptions in full help
+	h.Styles.FullSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))  // ANSI bright black for separators
 
 	model := &PlanningModel{
 		session:   session,
@@ -333,7 +341,7 @@ func (m *PlanningModel) renderHeader() string {
 
 // renderFooter renders the help and navigation footer
 func (m *PlanningModel) renderFooter() string {
-	helpSepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	helpSepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))  // Bright black for separator (matches help separator style)
 	helpSep := helpSepStyle.Render(strings.Repeat("━", m.width))
 	
 	return helpSep + "\n" + m.help.View(m.keys)
