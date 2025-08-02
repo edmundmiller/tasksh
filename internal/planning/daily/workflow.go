@@ -1,6 +1,7 @@
 package daily
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -93,6 +94,11 @@ func NewDailyPlanningSession(targetDate time.Time) (*DailyPlanningSession, error
 		CurrentStep: StepReflection,
 		StartedAt:   time.Now(),
 		analyzer:    shared.NewTaskAnalyzer(timeDB),
+	}
+	
+	// Ensure recurring daily planning task exists
+	if err := session.ensureRecurringPlanningTask(); err != nil {
+		fmt.Printf("Warning: Could not ensure recurring planning task: %v\n", err)
 	}
 	
 	// Check for existing scheduled tasks
@@ -401,29 +407,37 @@ func (s *DailyPlanningSession) ScheduleSelectedTasks() error {
 	return nil
 }
 
-// markDailyPlanningComplete creates or updates a recurring task to track daily planning completion
+// markDailyPlanningComplete completes today's instance of the daily planning recurring task
 func (s *DailyPlanningSession) markDailyPlanningComplete() error {
-	// Simply create a completed task for today's planning
-	description := fmt.Sprintf("Daily Planning - %s", s.Context.Date.Format("January 2, 2006"))
+	// Find today's instance of the daily planning task
+	// For recurring tasks, we need to find the pending instance that's due today
+	dateStr := s.Context.Date.Format("2006-01-02")
 	
-	// Create the task with project and tags
-	uuid, err := taskwarrior.AddTask(description, "project:planning", "+daily", "+ritual")
-	if err != nil {
-		return fmt.Errorf("failed to create daily planning task: %w", err)
-	}
+	// Look for pending Daily Planning tasks due today
+	output, err := taskwarrior.GetTasksJSON(
+		"status:pending",
+		"description:'Daily Planning'",
+		fmt.Sprintf("due:%s", dateStr))
 	
-	// If we got a UUID, complete it immediately
-	if uuid != "" {
-		if err := taskwarrior.CompleteTask(uuid); err != nil {
-			// Log but don't fail - the task was created at least
-			fmt.Printf("Warning: Created planning task but couldn't mark it complete: %v\n", err)
+	if err == nil && output != "" {
+		var tasks []map[string]interface{}
+		if err := json.Unmarshal([]byte(output), &tasks); err == nil && len(tasks) > 0 {
+			// Complete the first matching task
+			if uuid, ok := tasks[0]["uuid"].(string); ok && uuid != "" {
+				if err := taskwarrior.CompleteTask(uuid); err != nil {
+					fmt.Printf("Warning: Could not complete daily planning task: %v\n", err)
+				} else {
+					fmt.Println("Marked daily planning task as complete")
+				}
+			}
 		}
 	}
 	
-	// Also ensure there's a recurring task for tomorrow's planning
-	if err := s.ensureRecurringPlanningTask(); err != nil {
-		// Log but don't fail
-		fmt.Printf("Warning: Could not ensure recurring planning task: %v\n", err)
+	// Also create a simple completed task for record keeping
+	description := fmt.Sprintf("Daily Planning completed - %s", s.Context.Date.Format("January 2, 2006"))
+	uuid, err := taskwarrior.AddTask(description, "project:planning", "+daily", "+completed")
+	if err == nil && uuid != "" {
+		taskwarrior.CompleteTask(uuid)
 	}
 	
 	return nil
@@ -431,8 +445,36 @@ func (s *DailyPlanningSession) markDailyPlanningComplete() error {
 
 // ensureRecurringPlanningTask ensures there's a recurring task for daily planning
 func (s *DailyPlanningSession) ensureRecurringPlanningTask() error {
-	// For now, skip the recurring task creation to avoid complexity
-	// Users can create their own recurring tasks if needed
+	// Check if a recurring daily planning task already exists
+	// Look for tasks with 'recur' attribute that match our description
+	output, err := taskwarrior.GetTasksJSON("status:recurring", "description.contains:'Daily Planning'")
+	if err == nil && output != "" {
+		// Parse JSON to check if we have results
+		var tasks []map[string]interface{}
+		if err := json.Unmarshal([]byte(output), &tasks); err == nil && len(tasks) > 0 {
+			// Recurring task already exists
+			return nil
+		}
+	}
+	
+	// No recurring task found, create one
+	// According to Taskwarrior docs, recurrence is specified with recur:daily
+	description := "Daily Planning"
+	
+	// Create the recurring task with proper attributes
+	// Note: We don't use + for project, and we specify recur as an attribute
+	_, err = taskwarrior.AddTask(description, 
+		"project:planning",
+		"+daily", 
+		"+ritual",
+		"recur:daily",
+		"due:tomorrow")
+	
+	if err != nil {
+		return fmt.Errorf("failed to create recurring daily planning task: %w", err)
+	}
+	
+	fmt.Println("Created recurring daily planning task")
 	return nil
 }
 

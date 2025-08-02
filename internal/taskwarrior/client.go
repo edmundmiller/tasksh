@@ -217,6 +217,19 @@ func BatchLoadTasks(uuids []string) (map[string]*Task, error) {
 	return taskMap, nil
 }
 
+// GetTasksJSON retrieves tasks matching the given filters as JSON
+func GetTasksJSON(filters ...string) (string, error) {
+	args := append([]string{"rc.json.array=on"}, filters...)
+	args = append(args, "export")
+	
+	output, err := executeTask(args...)
+	if err != nil {
+		return "", fmt.Errorf("failed to get tasks: %w", err)
+	}
+	
+	return output, nil
+}
+
 // GetTaskInfo retrieves detailed information about a task
 func GetTaskInfo(uuid string) (*Task, error) {
 	// Get task description
