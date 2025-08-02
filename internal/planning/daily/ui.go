@@ -799,12 +799,13 @@ func (m *PlanningModel) renderFinalizationStep() string {
 		content.WriteString("\n" + instructionStyle.Render("Press 'n' to review your complete plan"))
 	} else {
 		// Examples of good focus statements
-		exampleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
-		content.WriteString("Examples of effective daily focus statements:\n")
-		content.WriteString(exampleStyle.Render("• \"Ship the authentication feature with comprehensive tests\"") + "\n")
-		content.WriteString(exampleStyle.Render("• \"Deep work on algorithm optimization - no meetings\"") + "\n")
-		content.WriteString(exampleStyle.Render("• \"Clear technical debt and improve code documentation\"") + "\n")
-		content.WriteString(exampleStyle.Render("• \"Customer support and bug fixes - be responsive\"") + "\n\n")
+		exampleHeaderStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+		exampleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Italic(true) // Bright cyan for better readability
+		content.WriteString(exampleHeaderStyle.Render("Examples of effective daily focus statements:") + "\n")
+		content.WriteString(exampleStyle.Render("  • \"Ship the authentication feature with comprehensive tests\"") + "\n")
+		content.WriteString(exampleStyle.Render("  • \"Deep work on algorithm optimization - no meetings\"") + "\n")
+		content.WriteString(exampleStyle.Render("  • \"Clear technical debt and improve code documentation\"") + "\n")
+		content.WriteString(exampleStyle.Render("  • \"Customer support and bug fixes - be responsive\"") + "\n\n")
 		
 		instructionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Italic(true)
 		content.WriteString(instructionStyle.Render("Press 'n' to set your daily focus"))
