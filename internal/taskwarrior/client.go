@@ -289,6 +289,47 @@ func CompleteTask(uuid string) error {
 	return nil
 }
 
+// AddTask creates a new task with the given description and optional tags
+func AddTask(description string, project string, tags ...string) (string, error) {
+	args := []string{"rc.confirmation:no", "rc.verbose:nothing", "add", description}
+	
+	// Add project if provided
+	if project != "" {
+		args = append(args, project)
+	}
+	
+	// Add tags
+	for _, tag := range tags {
+		args = append(args, tag)
+	}
+	
+	output, err := executeTask(args...)
+	if err != nil {
+		return "", fmt.Errorf("failed to add task: %w", err)
+	}
+	
+	// Extract the UUID from the output
+	// The output typically contains "Created task [UUID]"
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "Created task") {
+			// Extract UUID from between square brackets or find it otherwise
+			parts := strings.Fields(line)
+			for _, part := range parts {
+				// UUIDs are typically 36 characters long
+				part = strings.Trim(part, "[].")
+				if len(part) == 36 && strings.Contains(part, "-") {
+					return part, nil
+				}
+			}
+		}
+	}
+	
+	// If we can't find the UUID, return empty string but no error
+	// The task was still created
+	return "", nil
+}
+
 // DeleteTask deletes a task
 func DeleteTask(uuid string) error {
 	if _, err := executeTask("rc.confirmation:no", "rc.verbose:nothing", uuid, "delete"); err != nil {

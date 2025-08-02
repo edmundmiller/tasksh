@@ -423,6 +423,9 @@ func (m *PlanningModel) updateViewport() {
 		content.WriteString(m.renderFinalizationStep())
 	case StepSummary:
 		content.WriteString(m.renderSummaryStep())
+	case StepCompleted:
+		// Keep showing the summary after completion
+		content.WriteString(m.renderCompletedStep())
 	default:
 		content.WriteString("Unknown step")
 	}
@@ -996,6 +999,116 @@ func renderTaskList(content *strings.Builder, tasks []shared.PlannedTask, color 
 			}
 		}
 	}
+}
+
+// renderCompletedStep renders the completed planning state
+func (m *PlanningModel) renderCompletedStep() string {
+	var content strings.Builder
+	
+	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true)
+	content.WriteString(headerStyle.Render("✅ Daily Planning Complete") + "\n\n")
+	
+	// Check if we have tasks
+	if len(m.session.SelectedTasks) == 0 {
+		emptyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+		content.WriteString(emptyStyle.Render("No tasks were scheduled for today.") + "\n")
+		return content.String()
+	}
+	
+	// Date and focus header
+	dateStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Bold(true)
+	content.WriteString(dateStyle.Render(m.session.Context.Date.Format("📅 Monday, January 2, 2006")) + "\n")
+	
+	if m.session.DailyFocus != "" {
+		focusBoxStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("10")).
+			Padding(0, 2).
+			Margin(1, 0).
+			Width(70)
+		
+		focusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+		focusContent := "🎯 " + focusStyle.Render(m.session.DailyFocus)
+		content.WriteString(focusBoxStyle.Render(focusContent) + "\n")
+	}
+	
+	// Success message
+	successStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true).Margin(1, 0)
+	content.WriteString(successStyle.Render("✓ All tasks have been scheduled in Taskwarrior") + "\n")
+	
+	// Calculate totals
+	totalHours, _, _ := shared.CalculateWorkloadSummary(m.session.SelectedTasks)
+	
+	// Tasks by category
+	criticalTasks := []shared.PlannedTask{}
+	importantTasks := []shared.PlannedTask{}
+	flexibleTasks := []shared.PlannedTask{}
+	
+	for _, task := range m.session.SelectedTasks {
+		switch task.Category {
+		case shared.CategoryCritical:
+			criticalTasks = append(criticalTasks, task)
+		case shared.CategoryImportant:
+			importantTasks = append(importantTasks, task)
+		case shared.CategoryFlexible:
+			flexibleTasks = append(flexibleTasks, task)
+		}
+	}
+	
+	// Task list
+	sectionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
+	
+	if len(criticalTasks) > 0 {
+		content.WriteString("\n" + sectionStyle.Render("🔴 CRITICAL TASKS") + "\n")
+		renderTaskList(&content, criticalTasks, "1")
+	}
+	
+	if len(importantTasks) > 0 {
+		content.WriteString("\n" + sectionStyle.Render("🟡 IMPORTANT TASKS") + "\n")
+		renderTaskList(&content, importantTasks, "3")
+	}
+	
+	if len(flexibleTasks) > 0 {
+		content.WriteString("\n" + sectionStyle.Render("🟢 FLEXIBLE TASKS") + "\n")
+		renderTaskList(&content, flexibleTasks, "2")
+	}
+	
+	// Summary statistics
+	statsBoxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("10")).
+		Padding(1, 2).
+		Margin(1, 0).
+		Width(50)
+	
+	var statsContent strings.Builder
+	statsStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+	
+	statsContent.WriteString(labelStyle.Render("📋 Scheduled Tasks: ") + statsStyle.Render(fmt.Sprintf("%d", len(m.session.SelectedTasks))) + "\n")
+	statsContent.WriteString(labelStyle.Render("⏱  Total Time: ") + statsStyle.Render(fmt.Sprintf("%.1f hours", totalHours)) + "\n")
+	
+	// Time projections
+	if totalHours > 0 {
+		now := time.Now()
+		startTime := time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, now.Location())
+		endTime := startTime.Add(time.Duration(totalHours * float64(time.Hour)))
+		
+		statsContent.WriteString(labelStyle.Render("🕐 If starting at 9 AM: ") + 
+			statsStyle.Render(fmt.Sprintf("Done by %s", endTime.Format("3:04 PM"))))
+	}
+	
+	content.WriteString("\n" + statsBoxStyle.Render(statsContent.String()) + "\n")
+	
+	// Motivational closing
+	motivationalStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Italic(true).Margin(1, 0)
+	content.WriteString(motivationalStyle.Render("Have a productive day! Your plan is saved and ready. 🌟") + "\n\n")
+	
+	// Exit instruction
+	exitStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+	content.WriteString(exitStyle.Render("Press 'q' to exit"))
+	
+	return content.String()
 }
 
 // Helper methods

@@ -120,7 +120,8 @@ func (s *DailyPlanningSession) Close() error {
 
 // GetStepProgress returns the current step and total steps
 func (s *DailyPlanningSession) GetStepProgress() (current int, total int) {
-	return int(s.CurrentStep), int(StepCompleted)
+	// StepCompleted is not an actual step, so total steps is StepSummary + 1
+	return int(s.CurrentStep), int(StepSummary) + 1
 }
 
 // IsCompleted returns true if the planning session is completed
@@ -388,6 +389,87 @@ func (s *DailyPlanningSession) ScheduleSelectedTasks() error {
 		err := taskwarrior.ModifyTask(task.UUID, fmt.Sprintf("scheduled:%s", dateStr))
 		if err != nil {
 			return fmt.Errorf("failed to schedule task %s: %w", task.UUID, err)
+		}
+	}
+	
+	// Mark daily planning as complete
+	if err := s.markDailyPlanningComplete(); err != nil {
+		// Log but don't fail - this is a nice-to-have feature
+		fmt.Printf("Warning: Could not mark daily planning as complete: %v\n", err)
+	}
+	
+	return nil
+}
+
+// markDailyPlanningComplete creates or updates a recurring task to track daily planning completion
+func (s *DailyPlanningSession) markDailyPlanningComplete() error {
+	// First, check if there's already a daily planning task for today
+	filters := []string{
+		fmt.Sprintf("description:'Daily Planning - %s'", s.Context.Date.Format("January 2, 2006")),
+		"(+PENDING or +COMPLETED)",
+	}
+	
+	existingUUIDs, err := shared.LoadTasksByFilter(filters...)
+	if err != nil {
+		return fmt.Errorf("failed to check for existing daily planning task: %w", err)
+	}
+	
+	if len(existingUUIDs) > 0 {
+		// Mark the existing task as completed
+		for _, uuid := range existingUUIDs {
+			if err := taskwarrior.CompleteTask(uuid); err != nil {
+				return fmt.Errorf("failed to complete daily planning task: %w", err)
+			}
+		}
+	} else {
+		// Create a new task for today's planning and immediately complete it
+		description := fmt.Sprintf("Daily Planning - %s", s.Context.Date.Format("January 2, 2006"))
+		project := "+planning"
+		tags := []string{"+daily", "+ritual"}
+		
+		// Create the task
+		uuid, err := taskwarrior.AddTask(description, project, tags...)
+		if err != nil {
+			return fmt.Errorf("failed to create daily planning task: %w", err)
+		}
+		
+		// Complete it immediately
+		if err := taskwarrior.CompleteTask(uuid); err != nil {
+			return fmt.Errorf("failed to complete daily planning task: %w", err)
+		}
+	}
+	
+	// Also ensure there's a recurring task for tomorrow's planning
+	if err := s.ensureRecurringPlanningTask(); err != nil {
+		return fmt.Errorf("failed to ensure recurring planning task: %w", err)
+	}
+	
+	return nil
+}
+
+// ensureRecurringPlanningTask ensures there's a recurring task for daily planning
+func (s *DailyPlanningSession) ensureRecurringPlanningTask() error {
+	// Check if recurring task exists
+	filters := []string{
+		"description:'Daily Planning'",
+		"+PENDING",
+		"recur.any:",
+	}
+	
+	recurringUUIDs, err := shared.LoadTasksByFilter(filters...)
+	if err != nil {
+		return fmt.Errorf("failed to check for recurring planning task: %w", err)
+	}
+	
+	// If no recurring task exists, create one
+	if len(recurringUUIDs) == 0 {
+		description := "Daily Planning"
+		project := "+planning"
+		tags := []string{"+daily", "+ritual", "recur:daily", "due:tomorrow", "scheduled:tomorrow"}
+		
+		_, err := taskwarrior.AddTask(description, project, tags...)
+		if err != nil {
+			return fmt.Errorf("failed to create recurring daily planning task: %w", err)
 		}
 	}
 	
