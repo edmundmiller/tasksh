@@ -46,3 +46,6 @@ bench_results/
 profile_planning
 bench_compare
 startup_bench
+
+# Crush development artifacts
+.crush/

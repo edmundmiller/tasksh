@@ -10,12 +10,13 @@ import (
 
 // Task represents a Taskwarrior task
 type Task struct {
-	UUID        string
-	Description string
-	Project     string
-	Priority    string
-	Status      string
-	Due         string
+	UUID        string   `json:"uuid"`
+	Description string   `json:"description"`
+	Project     string   `json:"project"`
+	Priority    string   `json:"priority"`
+	Status      string   `json:"status"`
+	Due         string   `json:"due"`
+	Tags        []string `json:"tags"`
 }
 
 // CheckAvailable verifies that the task command is available

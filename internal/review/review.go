@@ -11,6 +11,11 @@ import (
 
 // Run starts the interactive task review process
 func Run(limit int) error {
+	// Check for modern UI flag
+	if os.Getenv("TASKSH_MODERN_UI") == "true" {
+		return RunModern(limit)
+	}
+
 	// Ensure review configuration is set up
 	if err := taskwarrior.EnsureReviewConfig(); err != nil {
 		return fmt.Errorf("failed to configure review: %w", err)
